@@ -82,7 +82,6 @@ class AffineTransformation{
             if(inRange(r,0,nRows) && inRange(c, 0, nCols)) q[j][k] = bilinearInterpolation(I, r, c, dr, dc, k);
           } 
         }
-
       }
     }
     return output;
@@ -219,7 +218,74 @@ Mat scale(Mat &I, double x_scale, double y_scale, Interpolation ip){
 
   return resample(I, newRow, newCol, ip);
 }
+
+Mat translate(Mat &I, int dx, int dy){
+
+  int Rows = I.rows;
+  int Cols = I.cols;
+
+  Mat output = Mat::zeros(Rows, Cols, CV_8UC3);
+
+  for(int i=0;i<Rows;i++){
   
+    for(int j=0;j<Cols;j++){
+      if(i+dx < Rows && j+dy < Cols){
+        output.at<Vec3b>(i+dx,j+dy) = I.at<Vec3b>(i,j);
+      }
+    }
+  }
+  return output;
+}
+
+Mat shear(Mat &I, double factor, char axis, Interpolation ip ){
+
+  int nRows = I.rows;
+  int nCols = I.cols;
+  int channels = I.channels();
+
+  double shear_x = 0, shear_y = 0;
+
+  if(axis == 'x') shear_x = factor;
+  else if(axis == 'y') shear_y = factor;
+
+  int newRow = floor(nRows + shear_x*nCols);
+  int newCol = floor(nCols + shear_y*nRows);
+
+
+  Mat output(newRow, newCol, CV_8UC3);
+
+  Vec3b *p,*q;
+
+  for(int i=0;i<newRow;i++){
+    
+    p = I.ptr<Vec3b>(i);
+    q = output.ptr<Vec3b>(i);
+
+    for(int j=0;j<newCol;j++){
+
+      for(int k=0;k<channels;k++){
+        if(ip == nearest){
+            int r = round((i - shear_x*j)/(1-shear_x*shear_y));
+            int c = round((j - shear_y*i)/(1-shear_x*shear_y));
+            if(inRange(r,0,nRows) && inRange(c, 0, nCols)) q[j][k] = nearestNeighbour(I, r, c ,k);
+        } 
+
+        else if(ip == bilinear){
+
+          int r = floor((i - shear_x*j)/(1-shear_x*shear_y));
+          int c = floor((j - shear_y*i)/(1-shear_x*shear_y));
+
+          double dr = (i - shear_x*j)/(1-shear_x*shear_y) - r;
+          double dc = (j - shear_y*i)/(1-shear_x*shear_y) - c;
+
+          if(inRange(r,0,nRows) && inRange(c, 0, nCols)) q[j][k] = bilinearInterpolation(I, r, c, dr, dc, k);
+        } 
+      }
+
+    }
+  }
+  return output;
+}
 
 };
 
@@ -246,6 +312,7 @@ public:
     }
     return output;
   }
+
 };
 
 
@@ -259,7 +326,7 @@ int main( int argc, char** argv ) {
       return -1;
     }
   AffineTransformation a;
-  image = a.scale(image, 1,2, bilinear);
+  image = a.shear(image, 0.2,'y', bilinear);
   namedWindow( "Display window", WINDOW_AUTOSIZE );
   imshow( "Display window", image );
   
