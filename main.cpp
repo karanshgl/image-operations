@@ -43,16 +43,11 @@ class AffineTransformation{
     return (be <= x && x < en);
   }
 
-public:
+  Mat resample(Mat &I, int newRow, int newCol, Interpolation ip){
 
-  Mat resize(Mat &I, double scale, Interpolation ip){
-
-    int channels = I.channels();
     int nRows = I.rows;
     int nCols = I.cols;
-
-    int newRow = floor(scale*nRows);
-    int newCol = floor(scale*nCols);
+    int channels = I.channels();
 
     Mat output(newRow, newCol, CV_8UC3);
 
@@ -91,6 +86,19 @@ public:
       }
     }
     return output;
+  }
+
+public:
+
+  Mat resize(Mat &I, double scale, Interpolation ip){
+
+    int nRows = I.rows;
+    int nCols = I.cols;
+
+    int newRow = floor(scale*nRows);
+    int newCol = floor(scale*nCols);
+
+    return resample(I, newRow, newCol, ip);
 
   }
 
@@ -200,6 +208,17 @@ Mat rotate(Mat &I, double angle, Interpolation ip){
   return output;
 
 }
+
+Mat scale(Mat &I, double x_scale, double y_scale, Interpolation ip){
+
+  int nRows = I.rows;
+  int nCols = I.cols;
+
+  int newRow = floor(x_scale*nRows);
+  int newCol = floor(y_scale*nCols);
+
+  return resample(I, newRow, newCol, ip);
+}
   
 
 };
@@ -240,7 +259,7 @@ int main( int argc, char** argv ) {
       return -1;
     }
   AffineTransformation a;
-  image = a.rotate(image, 45, bilinear);
+  image = a.scale(image, 1,2, bilinear);
   namedWindow( "Display window", WINDOW_AUTOSIZE );
   imshow( "Display window", image );
   
