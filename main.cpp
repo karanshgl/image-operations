@@ -644,7 +644,6 @@ Mat histogramEqualization(Mat &I){
     uchar *p,*q;
 
     int frequency[256] = {0};
-    int frequency2[256] = {0};
     int lookuptable[256];
 
     for(int i=0;i<nRows;i++){
@@ -659,7 +658,6 @@ Mat histogramEqualization(Mat &I){
     for(int i=0;i<256;i++){
       cumulative_sum += frequency[i];
       lookuptable[i] = round(255*(cumulative_sum)*1.0/(nRows*nCols));
-      frequency2[lookuptable[i]]++;
     }
 
 
@@ -671,23 +669,95 @@ Mat histogramEqualization(Mat &I){
     }
     return I_gray;
   }
+
+  Mat histogramMatching(Mat &I, Mat &D){
+
+    int nRows = I.rows;
+    int nCols = I.cols;
+    int dRows = D.rows;
+    int dCols = D.cols;
+
+    Mat I_gray(I), D_gray(D);
+
+    if(I.channels() == 3) cvtColor(I, I_gray, CV_BGR2GRAY );
+    if(D.channels() == 3) cvtColor(D, D_gray, CV_BGR2GRAY );
+
+    Mat output(nRows,nCols,CV_8UC1);
+
+    int lookuptable[256] = {0};
+
+    double cdf_i[256] = {0};
+    int frequency_i[256] = {0};
+    double cdf_d[256] = {0};
+    int frequency_d[256] = {0};
+
+    uchar *p, *q;
+
+    for(int i=0;i<nRows;i++){
+      p = I_gray.ptr<uchar>(i);
+      for(int j=0;j<nCols;j++){
+        frequency_i[p[j]]++;
+      }
+    }
+
+    for(int i=0;i<dRows;i++){
+      p = D_gray.ptr<uchar>(i);
+      for(int j=0;j<dCols;j++){
+        frequency_d[p[j]]++;
+      }
+    }
+
+    int sum_i = 0, sum_d = 0;
+    for(int i=0;i<256;i++){
+      sum_i += frequency_i[i];
+      sum_d += frequency_d[i];
+      cdf_i[i] = sum_i*1.0/(nRows*nCols);
+      cdf_d[i] = sum_d*1.0/(dRows*dCols);
+    }
+
+    double min_diff, diff;
+    int newVal;
+    for(int i=0;i<256;i++){
+      min_diff = 2; // inf
+      for(int j=0;j<256;j++){
+        diff = abs(cdf_i[i] - cdf_d[j]);
+        if(diff < min_diff){
+          min_diff = diff;
+          newVal = j;
+        }
+      }
+      lookuptable[i] = newVal;
+    }
+
+
+    for(int i=0;i<256;i++)
+    for(int i=0;i<nRows;i++){
+      p = I_gray.ptr<uchar>(i);
+      q = output.ptr<uchar>(i);
+      for(int j=0;j<nCols;j++){
+        q[j] = lookuptable[p[j]];
+      }
+    }
+    return output;
+  }
 };
 
 
 int main( int argc, char** argv ) {
   
-  Mat image, img, out;
-  image = imread("hist2.png" , 1);
+  Mat image, img, out, image2;
+  image = imread("image1.jpg" , 1);
+  image2 = imread("image2.jpg", 1);
   
   if(! image.data ) {
       cout <<  "Could not open or find the image" << endl ;
       return -1;
     }
 
-  IntensityTransformations a;
+  IntensityTransformationsGray a;
   AffineTransformation b;
 
-  img = a.histogramEqualizationLuminance(image);
+  img = a.histogramMatching(image2, image);
 
   imshow( "Display window", img );
 
