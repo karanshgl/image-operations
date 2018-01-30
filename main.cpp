@@ -180,8 +180,8 @@ Mat rotate(Mat &I, double angle, Interpolation ip){
 
       int shifted_j = j - out_orgin_y;
 
-      double rotate_x = cosine*shifted_i - sine*shifted_j + in_origin_x;
-      double rotate_y = sine*shifted_i + cosine*shifted_j + in_origin_y;
+      double rotate_x = cosine*shifted_i + sine*shifted_j + in_origin_x;
+      double rotate_y = - sine*shifted_i + cosine*shifted_j + in_origin_y;
 
       for(int k=0;k<channels;k++){
         if(ip == nearest){
@@ -245,12 +245,19 @@ Mat shear(Mat &I, double factor, char axis, Interpolation ip ){
   int channels = I.channels();
 
   double shear_x = 0, shear_y = 0;
+  double offset_x = 0, offset_y = 0;
 
-  if(axis == 'x') shear_x = factor;
-  else if(axis == 'y') shear_y = factor;
+  if(axis == 'x'){
+    shear_x = factor;
+    offset_x = (factor < 0 ? shear_x*nCols: 0 );
+  } 
+  else if(axis == 'y'){
+    shear_y = factor;
+    offset_y = (factor < 0 ? shear_y*nRows: 0 );
+  } 
 
-  int newRow = floor(nRows + shear_x*nCols);
-  int newCol = floor(nCols + shear_y*nRows);
+  int newRow = floor(nRows + abs(shear_x*nCols));
+  int newCol = floor(nCols + abs(shear_y*nRows));
 
 
   Mat output(newRow, newCol, CV_8UC3);
@@ -263,21 +270,21 @@ Mat shear(Mat &I, double factor, char axis, Interpolation ip ){
     q = output.ptr<Vec3b>(i);
 
     for(int j=0;j<newCol;j++){
-
+  
       for(int k=0;k<channels;k++){
         if(ip == nearest){
-            int r = round((i - shear_x*j)/(1-shear_x*shear_y));
-            int c = round((j - shear_y*i)/(1-shear_x*shear_y));
+            int r = round((i - shear_x*j)/(1-shear_x*shear_y) + offset_x);
+            int c = round((j - shear_y*i)/(1-shear_x*shear_y) + offset_y);
             if(inRange(r,0,nRows) && inRange(c, 0, nCols)) q[j][k] = nearestNeighbour(I, r, c ,k);
         } 
 
         else if(ip == bilinear){
 
-          int r = floor((i - shear_x*j)/(1-shear_x*shear_y));
-          int c = floor((j - shear_y*i)/(1-shear_x*shear_y));
+          int r = floor((i - shear_x*j)/(1-shear_x*shear_y) + offset_x);
+          int c = floor((j - shear_y*i)/(1-shear_x*shear_y) + offset_y);
 
-          double dr = (i - shear_x*j)/(1-shear_x*shear_y) - r;
-          double dc = (j - shear_y*i)/(1-shear_x*shear_y) - c;
+          double dr = (i - shear_x*j)/(1-shear_x*shear_y) - r + offset_x;
+          double dc = (j - shear_y*i)/(1-shear_x*shear_y) - c + offset_y;
 
           if(inRange(r,0,nRows) && inRange(c, 0, nCols)) q[j][k] = bilinearInterpolation(I, r, c, dr, dc, k);
         } 
@@ -293,14 +300,36 @@ Mat shear(Mat &I, double factor, char axis, Interpolation ip ){
 
 class IntensityTransformations{
   double lookuptable_log[256];
+
+  int* lookuptable_generator(double *x_coordinate, double *y_coordinate, int n){
+    int *lookuptable = new int[256];
+    int k = 0;
+    double prev_x = 0, prev_y = 0, slope;
+    for(int i=0;i<n;i++){
+      slope = (y_coordinate[i] - prev_y)/(x_coordinate[i] - prev_x);
+      // equation y = m(x-px) + py
+      int k_limit = floor(x_coordinate[i]);
+      while(k<=k_limit){
+        int intensity = round(slope*(k-prev_x) + prev_y);
+        lookuptable[k++] = (intensity > 255 ? 255 : intensity );
+      }
+      prev_x = x_coordinate[i];
+      prev_y = y_coordinate[i];
+    }
+    slope = (255 - prev_y)/(255 - prev_x);
+    while(k<256){
+      int intensity = round(slope*(k-prev_x) + prev_y);
+      lookuptable[k++] = (intensity > 255 ? 255 : intensity );
+    } 
+
+    return lookuptable;
+  }
 public:
 
   IntensityTransformations(){
 
-    for(int i=0;i<256;i++){
-      lookuptable_log[i] = log(1+i);
-      cout<<lookuptable_log[i]<< " ";
-    }
+    for(int i=0;i<256;i++) lookuptable_log[i] = log(1+i);
+
   }
 
   Mat negative(Mat &I){
@@ -324,14 +353,147 @@ public:
     return output;
   }
 
-  Mat negative_gray(Mat &I){
-    // Returns the negative of the image 
+  Mat logTransformation(Mat &I, double c = 1.0){
+
+    int nRows = I.rows;
+    int nCols = I.cols;
+    int channels = I.channels();
+
+    Mat I_LAB;
+    cvtColor(I, I_LAB, COLOR_BGR2Lab);
+
+    Vec3b *p;
+
+    for(int i=0;i<nRows;i++){
+      p = I_LAB.ptr<Vec3b>(i);
+      for(int j=0;j<nCols;j++){
+        int intensity = round(c*lookuptable_log[p[j][0]]);
+        p[j][0] = (intensity > 255 ? 255 : intensity );
+      }
+    }
+    cvtColor(I_LAB, I_LAB, CV_Lab2BGR);
+    return I_LAB;
+  }
+
+  
+  
+
+Mat gammaCorrection(Mat &I, double gamma = 1.0, double c = 1.0){
+
     int nRows = I.rows;
     int nCols = I.cols;
 
-    Mat I_gray(I);
+    int lookuptable_gamma[256];
+    for(int i=0;i<256;i++) lookuptable_gamma[i] = round(c*pow(i*1.0/255,1/gamma)*255);
 
-    cvtColor(I, I_gray, CV_BGR2GRAY );
+    Mat I_LAB;
+    cvtColor(I, I_LAB, COLOR_BGR2Lab);
+
+    Vec3b *p;
+
+    for(int i=0;i<nRows;i++){
+      p = I_LAB.ptr<Vec3b>(i);
+      for(int j=0;j<nCols;j++){
+        int intensity = lookuptable_gamma[p[j][0]];
+        p[j][0] = (intensity > 255 ? 255 : intensity );
+      }
+    }
+    cvtColor(I_LAB, I_LAB, CV_Lab2BGR);
+    return I_LAB;
+  }
+
+Mat bitplaneSlicing(Mat &I, int bit){
+  int bit_sliced = 1 << (bit-1);
+  int channels = I.channels();
+  int nRows = I.rows;
+  int nCols = I.cols;
+
+  Mat output(nRows,nCols,CV_8UC3);
+  Vec3b *p,*q;
+
+  for(int i=0;i<nRows;i++){
+    p = I.ptr<Vec3b>(i);
+    q = output.ptr<Vec3b>(i);
+    for(int j=0;j<nCols;j++){
+      for(int k=0;k<channels;k++){
+      q[j][k] = p[j][k]&bit_sliced;
+      }
+    }
+  }
+  return output;
+
+}
+
+Mat piecewiseLinearTransformation(Mat &I, double *x_coordinate, double *y_coordinate, int n){
+  int *lookuptable = lookuptable_generator(x_coordinate,y_coordinate,n);
+
+  int channels = I.channels();
+  int nRows = I.rows;
+  int nCols = I.cols;
+
+  Mat output(nRows,nCols,CV_8UC3);
+  Vec3b *p,*q;
+
+  for(int i=0;i<nRows;i++){
+    p = I.ptr<Vec3b>(i);
+    q = output.ptr<Vec3b>(i);
+    for(int j=0;j<nCols;j++){
+      for(int k=0;k<channels;k++){
+      q[j][k] = lookuptable[p[j][k]];
+      }
+    }
+  }
+  delete[] lookuptable;
+  return output;
+}
+
+
+
+};
+
+class IntensityTransformationsGray{
+double lookuptable_log[256];
+
+  int* lookuptable_generator(double *x_coordinate, double *y_coordinate, int n){
+    int *lookuptable = new int[256];
+    int k = 0;
+    double prev_x = 0, prev_y = 0, slope;
+    for(int i=0;i<n;i++){
+      slope = (y_coordinate[i] - prev_y)/(x_coordinate[i] - prev_x);
+      // equation y = m(x-px) + py
+      int k_limit = floor(x_coordinate[i]);
+      while(k<=k_limit){
+        int intensity = round(slope*(k-prev_x) + prev_y);
+        lookuptable[k++] = (intensity > 255 ? 255 : intensity );
+      }
+      prev_x = x_coordinate[i];
+      prev_y = y_coordinate[i];
+    }
+    slope = (255 - prev_y)/(255 - prev_x);
+    while(k<256){
+      int intensity = round(slope*(k-prev_x) + prev_y);
+      lookuptable[k++] = (intensity > 255 ? 255 : intensity );
+    } 
+
+    return lookuptable;
+  }
+public:
+
+  IntensityTransformationsGray(){
+
+    for(int i=0;i<256;i++) lookuptable_log[i] = log(1+i);
+
+  }
+Mat gammaCorrection(Mat &I,  double gamma = 1.0, double c = 1.0){
+
+    int nRows = I.rows;
+    int nCols = I.cols;
+
+    int lookuptable_gamma[256];
+    for(int i=0;i<256;i++) lookuptable_gamma[i] = round(c*pow(i*1.0/255,1/gamma)*255);
+
+    Mat I_gray(I);
+    if(I.channels() == 3) cvtColor(I, I_gray, CV_BGR2GRAY );
 
     Mat output(nRows,nCols,CV_8UC1);
 
@@ -341,42 +503,48 @@ public:
       p = I_gray.ptr<uchar>(i);
       q = output.ptr<uchar>(i);
       for(int j=0;j<nCols;j++){
-        q[j] = 255 - p[j];
+        int intensity = lookuptable_gamma[p[j]];
+        q[j] = (intensity > 255 ? 255 : intensity );
       }
     }
     return output;
   }
 
-  Mat logTransformation(Mat &I, double c = 1.0){
+Mat piecewiseLinearTransformation(Mat &I, double *x_coordinate, double *y_coordinate, int n){
+  int *lookuptable = lookuptable_generator(x_coordinate,y_coordinate,n);
 
-    int nRows = I.rows;
-    int nCols = I.cols;
-    int channels = I.channels();
+  int channels = I.channels();
+  int nRows = I.rows;
+  int nCols = I.cols;
 
-    Mat I_LAB;
-    cvtColor(I, I_LAB, COLOR_BGR2HSV);
+  Mat I_gray(I);
 
-    Vec3b *p;
+   if(I.channels() == 3) cvtColor(I, I_gray, CV_BGR2GRAY );
 
-    for(int i=0;i<nRows;i++){
-      p = I_LAB.ptr<Vec3b>(i);
-      for(int j=0;j<nCols;j++){
-        int intensity = round(c*lookuptable_log[p[j][2]]);
-        p[j][2] = (intensity > 255 ? 255 : intensity );
-      }
+  Mat output(nRows,nCols,CV_8UC1);
+
+  uchar *p,*q;
+
+  for(int i=0;i<nRows;i++){
+    p = I_gray.ptr<uchar>(i);
+    q = output.ptr<uchar>(i);
+    for(int j=0;j<nCols;j++){
+      q[j] = lookuptable[p[j]];
     }
-    cvtColor(I_LAB, I_LAB, CV_HSV2BGR);
-    return I_LAB;
   }
 
-  Mat logTransformation_gray(Mat &I, double c = 1.0){
+  delete[] lookuptable;
+  return output;
+}
+
+Mat logTransformation(Mat &I, double c = 1.0){
 
     int nRows = I.rows;
     int nCols = I.cols;
 
     Mat I_gray(I);
 
-    cvtColor(I, I_gray, CV_BGR2GRAY );
+     if(I.channels() == 3) cvtColor(I, I_gray, CV_BGR2GRAY );
 
     Mat output(nRows,nCols,CV_8UC1);
 
@@ -393,14 +561,14 @@ public:
     return output;
   }
 
-  Mat gammaCorrection_gray(Mat &I,  double gamma = 1.0, double c = 1.0){
-
+  Mat negative(Mat &I){
+    // Returns the negative of the image 
     int nRows = I.rows;
     int nCols = I.cols;
 
     Mat I_gray(I);
 
-    cvtColor(I, I_gray, CV_BGR2GRAY );
+     if(I.channels() == 3) cvtColor(I, I_gray, CV_BGR2GRAY );
 
     Mat output(nRows,nCols,CV_8UC1);
 
@@ -410,35 +578,12 @@ public:
       p = I_gray.ptr<uchar>(i);
       q = output.ptr<uchar>(i);
       for(int j=0;j<nCols;j++){
-        double base = p[j]*1.0/255;
-        int intensity = round(c*pow(base,1/gamma)*255);
-        q[j] = (intensity > 255 ? 255 : intensity );
+        q[j] = 255 - p[j];
       }
     }
     return output;
   }
 
-Mat gammaCorrection(Mat &I, double gamma = 1.0, double c = 1.0){
-
-    int nRows = I.rows;
-    int nCols = I.cols;
-
-    Mat I_LAB;
-    cvtColor(I, I_LAB, COLOR_BGR2HSV);
-
-    Vec3b *p;
-
-    for(int i=0;i<nRows;i++){
-      p = I_LAB.ptr<Vec3b>(i);
-      for(int j=0;j<nCols;j++){
-        double base = p[j][2]*1.0/255;
-        int intensity = round(c*pow(base,1/gamma)*255);
-        p[j][2] = (intensity > 255 ? 255 : intensity );
-      }
-    }
-    cvtColor(I_LAB, I_LAB, CV_HSV2BGR);
-    return I_LAB;
-  }
 
 };
 
@@ -446,14 +591,22 @@ Mat gammaCorrection(Mat &I, double gamma = 1.0, double c = 1.0){
 int main( int argc, char** argv ) {
   
   Mat image, img;
-  image = imread("la.png" , 1);
+  image = imread("inp.jpg" , 1);
   
   if(! image.data ) {
       cout <<  "Could not open or find the image" << endl ;
       return -1;
     }
-  IntensityTransformations a;
-  image = a.gammaCorrection(image, 0.5);
+
+  double x[2],y[2];
+  for(int i=0;i<2;i++){
+    cin>>x[i]>>y[i];
+  }
+  IntensityTransformationsGray a;
+  AffineTransformation b;
+  imshow( "Display window2", image );
+
+  image = a.piecewiseLinearTransformation(image, x,y,2);
   namedWindow( "Display window", WINDOW_AUTOSIZE );
   imshow( "Display window", image );
   
