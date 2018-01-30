@@ -522,6 +522,77 @@ Mat histogramEqualization(Mat &I){
     return I_LAB;
   }
 
+   Mat histogramMatching(Mat &I, Mat &D){
+
+    int nRows = I.rows;
+    int nCols = I.cols;
+
+    int dRows = D.rows;
+    int dCols = D.cols;
+
+    Mat output(nRows,nCols,CV_8UC3);
+
+    int lookuptable[256][3] = {};
+
+    double cdf_i[256][3] = {};
+    int frequency_i[256][3] = {};
+    double cdf_d[256][3] = {};
+    int frequency_d[256][3] = {};
+
+    Vec3b *p, *q;
+
+    for(int i=0;i<nRows;i++){
+      p = I.ptr<Vec3b>(i);
+      for(int j=0;j<nCols;j++){
+        for(int k=0;k<I.channels();k++) frequency_i[p[j][k]][k]++;
+      }
+    }
+
+    for(int i=0;i<dRows;i++){
+      p = D.ptr<Vec3b>(i);
+      for(int j=0;j<dCols;j++){
+        for(int k=0;k<D.channels();k++) frequency_d[p[j][k]][k]++;
+      }
+    }
+
+    int sum_i[3] = {}, sum_d[3] = {};
+    for(int i=0;i<256;i++){
+      for(int k=0;k<I.channels();k++){
+        sum_i[k] += frequency_i[i][k];
+        sum_d[k] += frequency_d[i][k];
+        cdf_i[i][k] = sum_i[k]*1.0/(nRows*nCols);
+        cdf_d[i][k] = sum_d[k]*1.0/(dRows*dCols);
+      }
+    }
+
+    int newVal[3];
+    for(int i=0;i<256;i++){
+      double min_diff[3] = {2,2,2}, diff[3];
+      for(int j=0;j<256;j++){
+        for(int k=0;k<I.channels();k++){
+
+          diff[k] = abs(cdf_i[i][k] - cdf_d[j][k]);
+          if(diff[k] < min_diff[k]){
+            min_diff[k] = diff[k];
+            newVal[k] = j;
+          }
+        }
+      }
+      for(int k=0;k<I.channels();k++) lookuptable[i][k] = newVal[k];
+    }
+
+
+    for(int i=0;i<256;i++)
+    for(int i=0;i<nRows;i++){
+      p = I.ptr<Vec3b>(i);
+      q = output.ptr<Vec3b>(i);
+      for(int j=0;j<nCols;j++){
+        for(int k=0;k<I.channels();k++) q[j][k] = lookuptable[p[j][k]][k];
+      }
+    }
+    return output;
+  }
+
 };
 
 class IntensityTransformationsGray: Transformations{
@@ -747,17 +818,17 @@ int main( int argc, char** argv ) {
   
   Mat image, img, out, image2;
   image = imread("image1.jpg" , 1);
-  image2 = imread("image2.jpg", 1);
   
   if(! image.data ) {
       cout <<  "Could not open or find the image" << endl ;
       return -1;
     }
 
-  IntensityTransformationsGray a;
+  IntensityTransformations a;
   AffineTransformation b;
 
-  img = a.histogramMatching(image2, image);
+  img = a.histogramEqualization(image);
+  img = b.resize(img, 0.4, bilinear);
 
   imshow( "Display window", img );
 
