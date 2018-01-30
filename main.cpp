@@ -297,10 +297,8 @@ Mat shear(Mat &I, double factor, char axis, Interpolation ip ){
 
 };
 
-
-class IntensityTransformations{
-  double lookuptable_log[256];
-
+class Transformations{
+protected:
   int* lookuptable_generator(double *x_coordinate, double *y_coordinate, int n){
     int *lookuptable = new int[256];
     int k = 0;
@@ -324,13 +322,11 @@ class IntensityTransformations{
 
     return lookuptable;
   }
+};
+
+class IntensityTransformations: Transformations{
+
 public:
-
-  IntensityTransformations(){
-
-    for(int i=0;i<256;i++) lookuptable_log[i] = log(1+i);
-
-  }
 
   Mat negative(Mat &I){
     // Returns the negative of the image 
@@ -359,6 +355,10 @@ public:
     int nCols = I.cols;
     int channels = I.channels();
 
+    int lookuptable_log[256];
+    for(int i=0;i<256;i++) lookuptable_log[i] = round(c*log(1+i));
+
+
     Mat I_LAB;
     cvtColor(I, I_LAB, COLOR_BGR2Lab);
 
@@ -367,16 +367,13 @@ public:
     for(int i=0;i<nRows;i++){
       p = I_LAB.ptr<Vec3b>(i);
       for(int j=0;j<nCols;j++){
-        int intensity = round(c*lookuptable_log[p[j][0]]);
+        int intensity = lookuptable_log[p[j][0]];
         p[j][0] = (intensity > 255 ? 255 : intensity );
       }
     }
     cvtColor(I_LAB, I_LAB, CV_Lab2BGR);
     return I_LAB;
   }
-
-  
-  
 
 Mat gammaCorrection(Mat &I, double gamma = 1.0, double c = 1.0){
 
@@ -431,60 +428,70 @@ Mat piecewiseLinearTransformation(Mat &I, double *x_coordinate, double *y_coordi
   int nRows = I.rows;
   int nCols = I.cols;
 
+  Mat I_LAB;
+  cvtColor(I, I_LAB, COLOR_BGR2Lab);
+
+
   Mat output(nRows,nCols,CV_8UC3);
   Vec3b *p,*q;
 
   for(int i=0;i<nRows;i++){
-    p = I.ptr<Vec3b>(i);
-    q = output.ptr<Vec3b>(i);
+    p = I_LAB.ptr<Vec3b>(i);
     for(int j=0;j<nCols;j++){
-      for(int k=0;k<channels;k++){
-      q[j][k] = lookuptable[p[j][k]];
-      }
+      p[j][0] = lookuptable[p[j][0]];      
     }
   }
   delete[] lookuptable;
-  return output;
+  cvtColor(I_LAB, I_LAB, CV_Lab2BGR);
+  return I_LAB;
 }
 
+Mat histogramEqualization(Mat &I){
+    int nRows = I.rows;
+    int nCols = I.cols;
 
+    Mat output(nRows,nCols,CV_8UC3);
+
+    Vec3b *p,*q;
+
+    int frequency[256][3] = {};
+   
+
+    int lookuptable[256][3];
+
+    for(int i=0;i<nRows;i++){
+      p = I.ptr<Vec3b>(i);
+      for(int j=0;j<nCols;j++){
+        for(int k=0;k<I.channels();k++) frequency[p[j][k]][k]++;
+      }
+    }
+
+    int cumulative_sum[3] = {0};
+    for(int i=0;i<256;i++){
+      for(int k=0;k<I.channels();k++){
+        cumulative_sum[k] += frequency[i][k];
+        lookuptable[i][k] = round(255*(cumulative_sum[k])*1.0/(nRows*nCols));
+      } 
+
+    }
+
+
+    for(int i=0;i<nRows;i++){
+      p = I.ptr<Vec3b>(i);
+      q = output.ptr<Vec3b>(i);
+      for(int j=0;j<nCols;j++){
+        for(int k=0;k<I.channels();k++) q[j][k] = lookuptable[p[j][k]][k];
+      }
+    }
+    return output;
+  }
 
 };
 
-class IntensityTransformationsGray{
-double lookuptable_log[256];
+class IntensityTransformationsGray: Transformations{
 
-  int* lookuptable_generator(double *x_coordinate, double *y_coordinate, int n){
-    int *lookuptable = new int[256];
-    int k = 0;
-    double prev_x = 0, prev_y = 0, slope;
-    for(int i=0;i<n;i++){
-      slope = (y_coordinate[i] - prev_y)/(x_coordinate[i] - prev_x);
-      // equation y = m(x-px) + py
-      int k_limit = floor(x_coordinate[i]);
-      while(k<=k_limit){
-        int intensity = round(slope*(k-prev_x) + prev_y);
-        lookuptable[k++] = (intensity > 255 ? 255 : intensity );
-      }
-      prev_x = x_coordinate[i];
-      prev_y = y_coordinate[i];
-    }
-    slope = (255 - prev_y)/(255 - prev_x);
-    while(k<256){
-      int intensity = round(slope*(k-prev_x) + prev_y);
-      lookuptable[k++] = (intensity > 255 ? 255 : intensity );
-    } 
-
-    return lookuptable;
-  }
 public:
-
-  IntensityTransformationsGray(){
-
-    for(int i=0;i<256;i++) lookuptable_log[i] = log(1+i);
-
-  }
-Mat gammaCorrection(Mat &I,  double gamma = 1.0, double c = 1.0){
+  Mat gammaCorrection(Mat &I,  double gamma = 1.0, double c = 1.0){
 
     int nRows = I.rows;
     int nCols = I.cols;
@@ -540,7 +547,11 @@ Mat piecewiseLinearTransformation(Mat &I, double *x_coordinate, double *y_coordi
 Mat logTransformation(Mat &I, double c = 1.0){
 
     int nRows = I.rows;
-    int nCols = I.cols;
+    int nCols = I.cols;  
+
+
+    int lookuptable_log[256];
+    for(int i=0;i<256;i++) lookuptable_log[i] = round(c*log(1+i));
 
     Mat I_gray(I);
 
@@ -554,7 +565,7 @@ Mat logTransformation(Mat &I, double c = 1.0){
       p = I_gray.ptr<uchar>(i);
       q = output.ptr<uchar>(i);
       for(int j=0;j<nCols;j++){
-        int intensity = round(c*lookuptable_log[p[j]]);
+        int intensity = lookuptable_log[p[j]];
         q[j] = (intensity > 255 ? 255 : intensity );
       }
     }
@@ -584,31 +595,67 @@ Mat logTransformation(Mat &I, double c = 1.0){
     return output;
   }
 
+Mat histogramEqualization(Mat &I){
+    int nRows = I.rows;
+    int nCols = I.cols;
 
+    Mat I_gray(I);
+
+    if(I.channels() == 3) cvtColor(I, I_gray, CV_BGR2GRAY );
+
+    Mat output(nRows,nCols,CV_8UC1);
+
+    uchar *p,*q;
+
+    int frequency[256] = {0};
+    int frequency2[256] = {0};
+    int lookuptable[256];
+
+    for(int i=0;i<nRows;i++){
+      p = I_gray.ptr<uchar>(i);
+      for(int j=0;j<nCols;j++){
+        frequency[p[j]]++;
+      }
+    }
+
+    int cumulative_sum = 0;
+
+    for(int i=0;i<256;i++){
+      cumulative_sum += frequency[i];
+      lookuptable[i] = round(255*(cumulative_sum)*1.0/(nRows*nCols));
+      frequency2[lookuptable[i]]++;
+    }
+
+
+    for(int i=0;i<nRows;i++){
+      p = I_gray.ptr<uchar>(i);
+      for(int j=0;j<nCols;j++){
+        p[j] = lookuptable[p[j]];
+      }
+    }
+    return I_gray;
+  }
 };
 
 
 int main( int argc, char** argv ) {
   
-  Mat image, img;
-  image = imread("inp.jpg" , 1);
+  Mat image, img, out;
+  image = imread("hist2.png" , 1);
   
   if(! image.data ) {
       cout <<  "Could not open or find the image" << endl ;
       return -1;
     }
 
-  double x[2],y[2];
-  for(int i=0;i<2;i++){
-    cin>>x[i]>>y[i];
-  }
-  IntensityTransformationsGray a;
+  IntensityTransformations a;
   AffineTransformation b;
-  imshow( "Display window2", image );
 
-  image = a.piecewiseLinearTransformation(image, x,y,2);
+  img = a.histogramEqualization(image);
+
+  imshow( "Display window", img );
+
   namedWindow( "Display window", WINDOW_AUTOSIZE );
-  imshow( "Display window", image );
   
   waitKey(0);
   return 0;
