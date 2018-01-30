@@ -230,7 +230,7 @@ Mat translate(Mat &I, int dx, int dy){
   for(int i=0;i<Rows;i++){
   
     for(int j=0;j<Cols;j++){
-      if(i+dx < Rows && j+dy < Cols){
+      if(i+dx < Rows && i+dx >=0 && j+dy < Cols && j+dy >= 0){
         output.at<Vec3b>(i+dx,j+dy) = I.at<Vec3b>(i,j);
       }
     }
@@ -298,7 +298,7 @@ public:
   IntensityTransformations(){
 
     for(int i=0;i<256;i++){
-      lookuptable_log[i] = log2(1+i);
+      lookuptable_log[i] = log(1+i);
       cout<<lookuptable_log[i]<< " ";
     }
   }
@@ -324,6 +324,53 @@ public:
     return output;
   }
 
+  Mat negative_gray(Mat &I){
+    // Returns the negative of the image 
+    int nRows = I.rows;
+    int nCols = I.cols;
+
+    Mat I_gray(I);
+
+    cvtColor(I, I_gray, CV_BGR2GRAY );
+
+    Mat output(nRows,nCols,CV_8UC1);
+
+    uchar *p,*q;
+
+    for(int i=0;i<nRows;i++){
+      p = I_gray.ptr<uchar>(i);
+      q = output.ptr<uchar>(i);
+      for(int j=0;j<nCols;j++){
+        q[j] = 255 - p[j];
+      }
+    }
+    return output;
+  }
+
+  Mat logTransformation(Mat &I, double c = 1.0){
+
+    int nRows = I.rows;
+    int nCols = I.cols;
+    int channels = I.channels();
+
+    Mat I_LAB;
+    cvtColor(I, I_LAB, COLOR_BGR2HSV);
+
+    Vec3b *p;
+
+    for(int i=0;i<nRows;i++){
+      p = I_LAB.ptr<Vec3b>(i);
+      for(int j=0;j<nCols;j++){
+        int intensity = round(c*lookuptable_log[p[j][2]]);
+        p[j][2] = (intensity > 255 ? 255 : intensity );
+      }
+    }
+    cvtColor(I_LAB, I_LAB, CV_HSV2BGR);
+    return I_LAB;
+
+
+  }
+
   Mat logTransformation_gray(Mat &I, double c = 1.0){
 
     int nRows = I.rows;
@@ -341,7 +388,33 @@ public:
       p = I_gray.ptr<uchar>(i);
       q = output.ptr<uchar>(i);
       for(int j=0;j<nCols;j++){
-        q[j] = round(c*lookuptable_log[p[j]]);
+        int intensity = round(c*lookuptable_log[p[j]]);
+        q[j] = (intensity > 255 ? 255 : intensity );
+      }
+    }
+    return output;
+  }
+
+  Mat gammaCorrection_gray(Mat &I,  double gamma = 1.0, double c = 1.0){
+
+    int nRows = I.rows;
+    int nCols = I.cols;
+
+    Mat I_gray(I);
+
+    cvtColor(I, I_gray, CV_BGR2GRAY );
+
+    Mat output(nRows,nCols,CV_8UC1);
+
+    uchar *p,*q;
+
+    for(int i=0;i<nRows;i++){
+      p = I_gray.ptr<uchar>(i);
+      q = output.ptr<uchar>(i);
+      for(int j=0;j<nCols;j++){
+        double base = p[j]*1.0/255;
+        int intensity = round(c*pow(base,1/gamma)*255);
+        q[j] = (intensity > 255 ? 255 : intensity );
       }
     }
     return output;
@@ -352,7 +425,7 @@ public:
 
 int main( int argc, char** argv ) {
   
-  Mat image;
+  Mat image, img;
   image = imread("ein.jpg" , 1);
   
   if(! image.data ) {
@@ -360,7 +433,7 @@ int main( int argc, char** argv ) {
       return -1;
     }
   IntensityTransformations a;
-  image = a.logTransformation_gray(image, 20);
+  image = a.gammaCorrection_gray(image, 0.5);
   namedWindow( "Display window", WINDOW_AUTOSIZE );
   imshow( "Display window", image );
   
