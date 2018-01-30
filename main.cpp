@@ -486,6 +486,42 @@ Mat histogramEqualization(Mat &I){
     return output;
   }
 
+  Mat histogramEqualizationLuminance(Mat &I){
+    int nRows = I.rows;
+    int nCols = I.cols;
+
+    Mat I_LAB;
+    cvtColor(I, I_LAB, COLOR_BGR2Lab);
+
+    Vec3b *p,*q;
+
+    int frequency[256] = {0};
+   
+    int lookuptable[256];
+
+    for(int i=0;i<nRows;i++){
+      p = I.ptr<Vec3b>(i);
+      for(int j=0;j<nCols;j++){
+        frequency[p[j][0]]++;
+      }
+    }
+
+    int cumulative_sum = 0;
+    for(int i=0;i<256;i++){
+        cumulative_sum += frequency[i];
+        lookuptable[i] = round(255*(cumulative_sum)*1.0/(nRows*nCols));
+    }
+
+    for(int i=0;i<nRows;i++){
+      p = I_LAB.ptr<Vec3b>(i);
+      for(int j=0;j<nCols;j++){
+        p[j][0] = lookuptable[p[j][0]];
+      }
+    }
+    cvtColor(I_LAB, I_LAB, CV_Lab2BGR);
+    return I_LAB;
+  }
+
 };
 
 class IntensityTransformationsGray: Transformations{
@@ -651,7 +687,7 @@ int main( int argc, char** argv ) {
   IntensityTransformations a;
   AffineTransformation b;
 
-  img = a.histogramEqualization(image);
+  img = a.histogramEqualizationLuminance(image);
 
   imshow( "Display window", img );
 
