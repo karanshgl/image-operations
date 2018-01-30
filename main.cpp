@@ -1,4 +1,5 @@
 #include <opencv2/highgui.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
 #include <iostream>
 #include<string>
 #include <cmath>
@@ -290,8 +291,18 @@ Mat shear(Mat &I, double factor, char axis, Interpolation ip ){
 };
 
 
-class Levels{
+class IntensityTransformations{
+  double lookuptable_log[256];
 public:
+
+  IntensityTransformations(){
+
+    for(int i=0;i<256;i++){
+      lookuptable_log[i] = log2(1+i);
+      cout<<lookuptable_log[i]<< " ";
+    }
+  }
+
   Mat negative(Mat &I){
     // Returns the negative of the image 
     int channels = I.channels();
@@ -313,20 +324,43 @@ public:
     return output;
   }
 
+  Mat logTransformation_gray(Mat &I, double c = 1.0){
+
+    int nRows = I.rows;
+    int nCols = I.cols;
+
+    Mat I_gray(I);
+
+    cvtColor(I, I_gray, CV_BGR2GRAY );
+
+    Mat output(nRows,nCols,CV_8UC1);
+
+    uchar *p,*q;
+
+    for(int i=0;i<nRows;i++){
+      p = I_gray.ptr<uchar>(i);
+      q = output.ptr<uchar>(i);
+      for(int j=0;j<nCols;j++){
+        q[j] = round(c*lookuptable_log[p[j]]);
+      }
+    }
+    return output;
+  }
+
 };
 
 
 int main( int argc, char** argv ) {
   
   Mat image;
-  image = imread("abc.jpg" , 1);
+  image = imread("ein.jpg" , 1);
   
   if(! image.data ) {
       cout <<  "Could not open or find the image" << endl ;
       return -1;
     }
-  AffineTransformation a;
-  image = a.shear(image, 0.2,'y', bilinear);
+  IntensityTransformations a;
+  image = a.logTransformation_gray(image, 20);
   namedWindow( "Display window", WINDOW_AUTOSIZE );
   imshow( "Display window", image );
   
