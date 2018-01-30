@@ -367,8 +367,6 @@ public:
     }
     cvtColor(I_LAB, I_LAB, CV_HSV2BGR);
     return I_LAB;
-
-
   }
 
   Mat logTransformation_gray(Mat &I, double c = 1.0){
@@ -420,20 +418,42 @@ public:
     return output;
   }
 
+Mat gammaCorrection(Mat &I, double gamma = 1.0, double c = 1.0){
+
+    int nRows = I.rows;
+    int nCols = I.cols;
+
+    Mat I_LAB;
+    cvtColor(I, I_LAB, COLOR_BGR2HSV);
+
+    Vec3b *p;
+
+    for(int i=0;i<nRows;i++){
+      p = I_LAB.ptr<Vec3b>(i);
+      for(int j=0;j<nCols;j++){
+        double base = p[j][2]*1.0/255;
+        int intensity = round(c*pow(base,1/gamma)*255);
+        p[j][2] = (intensity > 255 ? 255 : intensity );
+      }
+    }
+    cvtColor(I_LAB, I_LAB, CV_HSV2BGR);
+    return I_LAB;
+  }
+
 };
 
 
 int main( int argc, char** argv ) {
   
   Mat image, img;
-  image = imread("ein.jpg" , 1);
+  image = imread("la.png" , 1);
   
   if(! image.data ) {
       cout <<  "Could not open or find the image" << endl ;
       return -1;
     }
   IntensityTransformations a;
-  image = a.gammaCorrection_gray(image, 0.5);
+  image = a.gammaCorrection(image, 0.5);
   namedWindow( "Display window", WINDOW_AUTOSIZE );
   imshow( "Display window", image );
   
