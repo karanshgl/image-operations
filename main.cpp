@@ -664,6 +664,18 @@ Mat histogramEqualization(Mat &I){
 
 class IntensityTransformationsGray: Transformations{
 
+int bilinearInterpolation(Mat &I, int r, int c, double dr, double dc){
+
+    double val = I.at<uchar>(r,c)*(1-dr)*(1-dc);
+    val += I.at<uchar>(r+1,c)*(dr)*(1-dc);
+    val += I.at<uchar>(r,c+1)*(1-dr)*(dc);
+    val += I.at<uchar>(r+1,c+1)*(dr)*dc;
+
+    int intensity = round(val);
+
+    return intensity;
+  }
+
 public:
   Mat gammaCorrection(Mat &I,  double gamma = 1.0, double c = 1.0){
 
@@ -743,6 +755,7 @@ Mat logTransformation(Mat &I, double c = 1.0){
         q[j] = (intensity > 255 ? 255 : intensity );
       }
     }
+
     return output;
   }
 
@@ -877,27 +890,79 @@ Mat histogramEqualization(Mat &I){
     }
     return output;
   }
+
+  Mat adaptiveHistogramEquilizationWindow(Mat &I, int tile){
+    // Do local he for tile/2, tile/2, then interpolate.
+
+    int nRows = I.rows;
+    int nCols = I.cols;
+
+    Mat I_gray(I);
+
+    if(I.channels() == 3) cvtColor(I, I_gray, CV_BGR2GRAY );
+
+    Mat T(I_gray);
+    Mat output(nRows,nCols,CV_8UC1);
+
+    uchar *p,*q, *t;
+
+    for(int i=0;i<nRows;i++){
+
+
+      for(int j=0;j<nCols;j++){
+        // For each grid
+        int frequency[256] = {0};
+        int lookuptable[256];
+
+        int start_x = i - tile/2, start_y = j - tile/2;
+        int end_x = i + tile/2, end_y = j + tile/2;
+
+          int dim_x = 0;
+          int dim_y = 0;
+          for(int x = (start_x<0? 0 : start_x); x < (end_x >= nRows? nRows: end_x); x++){
+            p = I_gray.ptr<uchar>(x);
+            t = T.ptr<uchar>(x);
+            dim_y = 0;
+            for(int y = (start_y<0? 0 : start_y ); y < (end_y >= nCols? nCols: end_y); y++){
+              frequency[p[y]]++;
+              t[y] = p[y];
+              dim_y++;
+              }
+            dim_x++;
+            }
+
+          int cumulative_sum = 0;
+
+          for(int x=0;x<256;x++){
+            cumulative_sum += frequency[x];
+            lookuptable[x] = round(255*(cumulative_sum)*1.0/(dim_x*dim_y));
+          }
+          T.at<uchar>(i,j) = lookuptable[T.at<uchar>(i,j)];
+        }
+      }
+
+    return T;
+  }
+
 };
 
 
 int main( int argc, char** argv ) {
   
   Mat image, img, out, image2;
-  image = imread("image2.jpg" , 1);
-  image2 = imread("ein.jpg" , 1);
-  
+  image = imread("hist.png" , 1);  
   
   if(! image.data ) {
       cout <<  "Could not open or find the image" << endl ;
       return -1;
     }
 
-  IntensityTransformations a;
+  IntensityTransformationsGray a;
   AffineTransformation b;
 
-  image = b.resize(image, 0.25, bilinear);
-  img = a.histogramMatchingLuminance(image, image2);
-
+  img = a.adaptiveHistogramEquilizationWindow(image, 128);
+  imwrite("hist_1.jpg", img);
+  img = a.histogramEqualization(image);
   imshow( "Display window", img );
 
   namedWindow( "Display window", WINDOW_AUTOSIZE );
