@@ -944,6 +944,92 @@ Mat histogramEqualization(Mat &I){
     return T;
   }
 
+  Mat adaptiveHistogramEquilization(Mat &I, int tile, int grid_x, int grid_y){
+    // Do local he for tile/2, tile/2, then interpolate.
+
+    int nRows = I.rows;
+    int nCols = I.cols;
+
+    Mat I_gray(I);
+
+    if(I.channels() == 3) cvtColor(I, I_gray, CV_BGR2GRAY );
+
+    Mat T(I_gray);
+    Mat O(nRows,nCols,CV_8UC1);
+    Mat grid(grid_x, grid_y, CV_8UC1);
+
+    uchar *p,*q, *t, *g;
+
+    double scale_x = nRows*1.0/(grid_x);
+    double scale_y = nCols*1.0/(grid_y);
+
+    for(int i=0;i<=grid_x;i++){
+      g = grid.ptr<uchar>(i);
+      for(int j=0;j<=grid_y;j++){
+        // For each grid
+        int frequency[256] = {0};
+        int lookuptable[256];
+
+        int origin_i = round(i*scale_x);
+        int origin_j = round(j*scale_y);
+
+        int start_x = origin_i - tile/2, start_y = origin_j - tile/2;
+        int end_x = origin_i + tile/2, end_y = origin_j + tile/2;
+
+        int dim_x = 0;
+        int dim_y = 0;
+        for(int x = (start_x<0? 0 : start_x); x < (end_x >= nRows? nRows: end_x); x++){
+          p = I_gray.ptr<uchar>(x);
+          t = T.ptr<uchar>(x);
+          dim_y = 0;
+          for(int y = (start_y<0? 0 : start_y ); y < (end_y >= nCols? nCols: end_y); y++){
+            frequency[p[y]]++;
+            t[y] = p[y];
+            dim_y++;
+            
+          }
+          dim_x++;
+        }
+
+        int cumulative_sum = 0;
+
+        for(int x=0;x<256;x++){
+          cumulative_sum += frequency[x];
+          lookuptable[x] = round(255*(cumulative_sum)*1.0/(dim_x*dim_y));
+        }
+
+        for(int x = (start_x<0? 0 : start_x), tile_x = 0; x < (end_x >= nRows? nRows: end_x) ; x++, tile_x++){
+          t = T.ptr<uchar>(x);
+          q = O.ptr<uchar>(x);
+          for(int y = (start_y<0? 0 : start_y ),tile_y=0; y < (end_y >= nCols? nCols: end_y)  ; y++, tile_y++){
+            t[y] = lookuptable[t[y]];
+            q[y] = 255;
+            if(x == origin_i && y == origin_j) g[j] = t[y];
+          }
+        }
+      }
+    }
+
+    // Grid is filled
+
+    for(int i=0;i<nRows;i++){
+      p = T.ptr<uchar>(i);
+      q = O.ptr<uchar>(i);
+      for(int j=0;j<nCols;j++){
+        if(q[j]==255)  continue;
+
+        int r = floor(i/scale_x);
+        int c = floor(j/scale_y);
+
+        int dr = i/scale_x - r;
+        int dc = j/scale_y - c;
+
+        p[j] = bilinearInterpolation(grid,r,c,dr,dc);
+      }
+    }
+    return T;
+  }
+
 };
 
 
@@ -960,9 +1046,7 @@ int main( int argc, char** argv ) {
   IntensityTransformationsGray a;
   AffineTransformation b;
 
-  img = a.adaptiveHistogramEquilizationWindow(image, 128);
-  imwrite("hist_1.jpg", img);
-  img = a.histogramEqualization(image);
+  img = a.adaptiveHistogramEquilization(image, 12, 20, 30);
   imshow( "Display window", img );
 
   namedWindow( "Display window", WINDOW_AUTOSIZE );
