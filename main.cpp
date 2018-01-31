@@ -908,7 +908,6 @@ Mat histogramEqualization(Mat &I){
 
     for(int i=0;i<nRows;i++){
 
-
       for(int j=0;j<nCols;j++){
         // For each grid
         int frequency[256] = {0};
@@ -954,15 +953,13 @@ Mat histogramEqualization(Mat &I){
 
     if(I.channels() == 3) cvtColor(I, I_gray, CV_BGR2GRAY );
 
-    Mat T(I_gray);
-    Mat O(nRows,nCols,CV_8UC1);
     Mat grid(grid_x, grid_y, CV_8UC1);
 
     uchar *p,*q, *t, *g;
 
     double scale_x = nRows*1.0/(grid_x);
     double scale_y = nCols*1.0/(grid_y);
-
+    int intensity = 0;
     for(int i=0;i<=grid_x;i++){
       g = grid.ptr<uchar>(i);
       for(int j=0;j<=grid_y;j++){
@@ -980,13 +977,11 @@ Mat histogramEqualization(Mat &I){
         int dim_y = 0;
         for(int x = (start_x<0? 0 : start_x); x < (end_x >= nRows? nRows: end_x); x++){
           p = I_gray.ptr<uchar>(x);
-          t = T.ptr<uchar>(x);
           dim_y = 0;
           for(int y = (start_y<0? 0 : start_y ); y < (end_y >= nCols? nCols: end_y); y++){
             frequency[p[y]]++;
-            t[y] = p[y];
             dim_y++;
-            
+            if(x == origin_i && y == origin_j) intensity = p[y];
           }
           dim_x++;
         }
@@ -997,26 +992,15 @@ Mat histogramEqualization(Mat &I){
           cumulative_sum += frequency[x];
           lookuptable[x] = round(255*(cumulative_sum)*1.0/(dim_x*dim_y));
         }
-
-        for(int x = (start_x<0? 0 : start_x), tile_x = 0; x < (end_x >= nRows? nRows: end_x) ; x++, tile_x++){
-          t = T.ptr<uchar>(x);
-          q = O.ptr<uchar>(x);
-          for(int y = (start_y<0? 0 : start_y ),tile_y=0; y < (end_y >= nCols? nCols: end_y)  ; y++, tile_y++){
-            t[y] = lookuptable[t[y]];
-            q[y] = 255;
-            if(x == origin_i && y == origin_j) g[j] = t[y];
-          }
-        }
+        g[j] = lookuptable[intensity];
       }
     }
 
     // Grid is filled
 
     for(int i=0;i<nRows;i++){
-      p = T.ptr<uchar>(i);
-      q = O.ptr<uchar>(i);
+      p = I_gray.ptr<uchar>(i);
       for(int j=0;j<nCols;j++){
-        if(q[j]==255)  continue;
 
         int r = floor(i/scale_x);
         int c = floor(j/scale_y);
@@ -1027,7 +1011,7 @@ Mat histogramEqualization(Mat &I){
         p[j] = bilinearInterpolation(grid,r,c,dr,dc);
       }
     }
-    return T;
+    return I_gray;
   }
 
 };
@@ -1046,7 +1030,7 @@ int main( int argc, char** argv ) {
   IntensityTransformationsGray a;
   AffineTransformation b;
 
-  img = a.adaptiveHistogramEquilization(image, 12, 20, 30);
+  img = a.adaptiveHistogramEquilization(image, 50, image.rows, image.cols);
   imshow( "Display window", img );
 
   namedWindow( "Display window", WINDOW_AUTOSIZE );
