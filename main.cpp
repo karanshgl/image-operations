@@ -356,19 +356,21 @@ Mat tiePoints(Mat &I, int *arr_x, int *arr_y, int *arr_x_dist, int *arr_y_dist){
   }
 
  
+  cout<<"Reconstruct:"<<max_x<<" "<<max_y<<endl;
 
   Mat output(max_x+min_x, max_y-min_y, CV_8UC3);
-  cout<<"Reconstruct:"<<max_x+min_x<<" "<<max_y-min_y;
   for(int i=0;i<max_x+min_x;i++){
     p = output.ptr<Vec3b>(i);
     for(int j=0;j<max_y-min_y;j++){
       double x_val = c_o2d[0]*i + c_o2d[1]*j + c_o2d[2]*i*j + c_o2d[3];
       double y_val = c_o2d[4]*i + c_o2d[5]*j + c_o2d[6]*i*j + c_o2d[7];
 
-      int r = round(x_val);
-      int c = round(y_val);
-      cout<<r<<" "<<c<<endl;
-      p[j] = I.at<Vec3b>(r,c);
+      int r = floor(x_val);
+      int c = floor(y_val);
+
+      double dr = x_val - r;
+      double dc = y_val - c;
+      for(int k=0;k<I.channels();k++) p[j][k] = bilinearInterpolation(I, r,c,dr,dc,k);
     }
   }
 
