@@ -88,6 +88,36 @@ class AffineTransformation{
     return output;
   }
 
+  Mat bilinearConstants(int *arr_x, int *arr_y, int *arr_x_dist, int *arr_y_dist){
+    Mat equations(8,8,CV_64FC1, double(0));
+    Mat coordinate_distorted(8,1,CV_64FC1);
+    Mat c_values(8,1, CV_64FC1);
+    double *p;
+    int *q;
+
+    for(int i=0;i<8;i++){
+      p = equations.ptr<double>(i);
+      int offset = (i%2)*4;
+      int entry = i/2;
+      p[offset] = arr_x[entry];
+      p[offset+1] = arr_y[entry];
+      p[offset+2] = arr_x[entry]*arr_y[entry];
+      p[offset+3] = 1;  
+    }
+
+    for(int i=0;i<8;i++){
+      p = coordinate_distorted.ptr<double>(i);
+      int val = 0;
+      if(i%2) val=arr_y_dist[i/2];
+      else val=arr_x_dist[i/2];
+      p[0] = val;
+    }
+    Mat eq_inv = equations.inv();
+    c_values = eq_inv*coordinate_distorted;
+
+    return c_values;
+  }
+
 public:
 
   Mat resize(Mat &I, double scale, Interpolation ip){
@@ -292,6 +322,56 @@ Mat shear(Mat &I, double factor, char axis, Interpolation ip ){
 
     }
   }
+  return output;
+}
+
+Mat tiePoints(Mat &I, int *arr_x, int *arr_y, int *arr_x_dist, int *arr_y_dist){
+
+  Mat c_orig_dist = bilinearConstants(arr_x, arr_y, arr_x_dist, arr_y_dist);
+  Mat c_dist_orig = bilinearConstants(arr_x_dist, arr_y_dist, arr_x, arr_y);
+
+  int nRows = I.rows;
+  int nCols = I.cols;
+
+  Vec3b *p, *q;
+  double c_d2o[8];
+  double c_o2d[8];
+  for(int i=0;i<8;i++){
+    c_o2d[i] = c_orig_dist.at<double>(i);
+    c_d2o[i] = c_dist_orig.at<double>(i);
+  }
+  int max_x = 0;
+  int max_y = 0;
+  int min_x = 100000000;
+  int min_y = 100000000;
+  for(int i=0;i<nRows;i++){
+    for(int j=0;j<nCols;j++){
+       double x_val = c_d2o[0]*i + c_d2o[1]*j + c_d2o[2]*i*j + c_d2o[3];
+       double y_val = c_d2o[4]*i + c_d2o[5]*j + c_d2o[6]*i*j + c_d2o[7];
+       max_x = max(max_x, (int)round(x_val));
+       max_y = max(max_y, (int)round(y_val));
+       min_x = min(min_x, (int)round(x_val));
+       min_y = min(min_y, (int)round(y_val));
+    }
+  }
+
+ 
+
+  Mat output(max_x+min_x, max_y-min_y, CV_8UC3);
+  cout<<"Reconstruct:"<<max_x+min_x<<" "<<max_y-min_y;
+  for(int i=0;i<max_x+min_x;i++){
+    p = output.ptr<Vec3b>(i);
+    for(int j=0;j<max_y-min_y;j++){
+      double x_val = c_o2d[0]*i + c_o2d[1]*j + c_o2d[2]*i*j + c_o2d[3];
+      double y_val = c_o2d[4]*i + c_o2d[5]*j + c_o2d[6]*i*j + c_o2d[7];
+
+      int r = round(x_val);
+      int c = round(y_val);
+      cout<<r<<" "<<c<<endl;
+      p[j] = I.at<Vec3b>(r,c);
+    }
+  }
+
   return output;
 }
 
@@ -899,12 +979,12 @@ Mat histogramEqualization(Mat &I){
 
     if(I.channels() == 3) cvtColor(I, I_gray, CV_BGR2GRAY );
 
-    Mat T(I_gray);
 
-    uchar *p,*q, *t;
+    uchar *p,*q, *t, *g;
+
     int intensity = 0;
     for(int i=0;i<nRows;i++){
-      q = T.ptr<uchar>(i);
+      q = I_gray.ptr<uchar>(i);
       for(int j=0;j<nCols;j++){
         // For each grid
         int frequency[256] = {0};
@@ -916,68 +996,11 @@ Mat histogramEqualization(Mat &I){
         int dim_x = 0;
         int dim_y = 0;
         for(int x = (start_x<0? 0 : start_x); x < (end_x >= nRows? nRows: end_x); x++){
-          t = I_gray.ptr<uchar>(x);
-          dim_y = 0;
-          for(int y = (start_y<0? 0 : start_y ); y < (end_y >= nCols? nCols: end_y); y++){
-            frequency[t[y]]++;
-            if(x == i && y == j) intensity = t[y];
-            dim_y++;
-            }
-          dim_x++;
-          }
-
-          int cumulative_sum = 0;
-
-          for(int x=0;x<256;x++){
-            cumulative_sum += frequency[x];
-            lookuptable[x] = round(255*(cumulative_sum)*1.0/(dim_x*dim_y));
-          }
-          q[j] = lookuptable[intensity];
-        }
-      }
-
-    return T;
-  }
-
-  Mat adaptiveHistogramEquilizationTile(Mat &I, int tile, int grid_x, int grid_y){
-    // Do local he for tile/2, tile/2, then interpolate.
-
-    int nRows = I.rows;
-    int nCols = I.cols;
-
-    Mat I_gray(I);
-
-    if(I.channels() == 3) cvtColor(I, I_gray, CV_BGR2GRAY );
-
-    Mat grid(grid_x, grid_y, CV_8UC1);
-
-    uchar *p,*q, *t, *g;
-
-    double scale_x = nRows*1.0/(grid_x);
-    double scale_y = nCols*1.0/(grid_y);
-    int intensity = 0;
-    for(int i=0;i<grid_x;i++){
-      g = grid.ptr<uchar>(i);
-      for(int j=0;j<grid_y;j++){
-        // For each grid
-        int frequency[256] = {0};
-        int lookuptable[256];
-
-        int origin_i = round(i*scale_x);
-        int origin_j = round(j*scale_y);
-
-        int start_x = origin_i - tile/2, start_y = origin_j - tile/2;
-        int end_x = origin_i + tile/2, end_y = origin_j + tile/2;
-
-        int dim_x = 0;
-        int dim_y = 0;
-        for(int x = (start_x<0? 0 : start_x); x < (end_x >= nRows? nRows: end_x); x++){
           p = I_gray.ptr<uchar>(x);
           dim_y = 0;
           for(int y = (start_y<0? 0 : start_y ); y < (end_y >= nCols? nCols: end_y); y++){
             frequency[p[y]]++;
             dim_y++;
-            if(x == origin_i && y == origin_j) intensity = p[y];
           }
           dim_x++;
         }
@@ -988,25 +1011,12 @@ Mat histogramEqualization(Mat &I){
           cumulative_sum += frequency[x];
           lookuptable[x] = round(255*(cumulative_sum)*1.0/(dim_x*dim_y));
         }
-        g[j] = lookuptable[intensity];
-      }
-    }
-
-    for(int i=0;i<nRows;i++){
-      p = I_gray.ptr<uchar>(i);
-      for(int j=0;j<nCols;j++){
-
-        int r = floor(i/scale_x);
-        int c = floor(j/scale_y);
-
-        int dr = i/scale_x - r;
-        int dc = j/scale_y - c;
-
-        p[j] = bilinearInterpolation(grid,r,c,dr,dc);
+        q[j] = lookuptable[q[j]];
       }
     }
     return I_gray;
   }
+
 
   Mat adaptiveHistogramEquilization(Mat &I, int tile, int grid_x, int grid_y){
     // Do local he for tile/2, tile/2, then interpolate.
@@ -1017,11 +1027,9 @@ Mat histogramEqualization(Mat &I){
     Mat I_gray(I);
 
     if(I.channels() == 3) cvtColor(I, I_gray, CV_BGR2GRAY );
-
     int size[3] = {grid_x, grid_y, 256};
-    Mat grid(3, size, CV_8UC1);
-    cout<<"Fine"<<endl;
-    int cdf[256][grid_x][grid_y];
+    Mat grid(3, size, CV_8UC(1));
+  
 
     uchar *p,*q, *t, *g;
 
@@ -1057,12 +1065,12 @@ Mat histogramEqualization(Mat &I){
         for(int x=0;x<256;x++){
           cumulative_sum += frequency[x];
           lookuptable[x] = round(255*(cumulative_sum)*1.0/(dim_x*dim_y));
-          cdf[x][i][j] = lookuptable[x];
-          cout<<cdf[x][i][j]<< " ";
+          grid.at<uchar>(i,j,x) = lookuptable[x];
         }
       }
     }
 
+    // Iterpolation
     for(int i=0;i<nRows;i++){
       p = I_gray.ptr<uchar>(i);
       for(int j=0;j<nCols;j++){
@@ -1071,19 +1079,18 @@ Mat histogramEqualization(Mat &I){
         int c = floor(j/scale_y);
 
         r = (r<0?0:r);
-        r = (r>=nRows?nRows-1:r);
+        r = (r>grid_x-2?grid_x-2:r);
 
         c = (c<0?0:c);
-        c = (c>=nCols?nCols-1:c);
+        c = (c>grid_y-2?grid_y-2:c);
         
         int dr = i/scale_x - r;
         int dc = j/scale_y - c;
         int in = p[j];
-
-        double val = cdf[in][r][c]*(1-dr)*(1-dc);
-        val += cdf[in][r+1][c]*(dr)*(1-dc);
-        val += cdf[in][r][c+1]*(1-dr)*(dc);
-        val += cdf[in][r+1][c+1]*(dr)*dc;
+        double val = grid.at<uchar>(r,c,in)*(1-dr)*(1-dc);
+        val += grid.at<uchar>(r+1,c,in)*(dr)*(1-dc);
+        val += grid.at<uchar>(r,c+1,in)*(dc)*(1-dr);
+        val += grid.at<uchar>(r+1,c+1,in)*(dr)*(dc);
         p[j] = round(val);
 
       }
@@ -1097,7 +1104,7 @@ Mat histogramEqualization(Mat &I){
 int main( int argc, char** argv ) {
   
   Mat image, img, out, image2;
-  image = imread("hist.png" , 1);  
+  image = imread("inp.jpg" , 1);  
   
   if(! image.data ) {
       cout <<  "Could not open or find the image" << endl ;
@@ -1106,14 +1113,18 @@ int main( int argc, char** argv ) {
 
   IntensityTransformationsGray a;
   AffineTransformation b;
+  int x_dist[] = {20,276, 460, 716};
+  int y_dist[] = {10, 10, 450, 450};
+  int x_orgin[] = {10, 266, 10, 266};
+  int y_orgin[] = {10, 10, 450, 450};
+  cout<<"Orign:"<<image.rows<<" "<<image.cols<<endl;
+  img = b.shear(image, 1, 'x', bilinear);
+  cout<<"Sheered:"<<img.rows<< " " << img.cols<<endl;
+  imwrite("sheer.jpg", img);
+  img = b.tiePoints(img, x_orgin, y_orgin, x_dist, y_dist);
 
-  img = a.adaptiveHistogramEquilization(image, 64, 30, 30);
-  imshow( "Display window", img );
-  img = a.adaptiveHistogramEquilizationWindow(image, 64);
-  imshow( "Display window 2", img );
-  img = a.histogramEqualization(image);
-  imshow( "Display window 3", img );
   namedWindow( "Display window", WINDOW_AUTOSIZE );
+  imshow( "Display window", img );    
   
   waitKey(0);
   return 0;
