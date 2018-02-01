@@ -1190,6 +1190,34 @@ Mat histogramEqualization(Mat &I){
     return I_gray;
   }
 
+
+Mat bitplaneSlicing(Mat &I, int bit){
+
+  int bit_sliced = 1 << (bit-1);
+  int nRows = I.rows;
+  int nCols = I.cols;
+
+  Mat I_gray(I);
+
+  if(I.channels() == 3) cvtColor(I, I_gray, CV_BGR2GRAY );
+  Mat output(nRows,nCols,CV_8UC1);
+
+  uchar *p,*q;
+
+  for(int i=0;i<nRows;i++){
+    p = I_gray.ptr<uchar>(i);
+    q = output.ptr<uchar>(i);
+    for(int j=0;j<nCols;j++){
+      
+      q[j] = p[j]&bit_sliced;
+      
+    }
+  }
+  return output;
+
+}
+
+
 };
 
 
@@ -1346,6 +1374,111 @@ class Menu{
     }
 
    
+    imshow( "Display window", output);  
+    waitKey(0);
+    destroyWindow("Display window");
+  }
+
+  void gamma_t(bool rgb){
+    Mat image;
+    Mat output;
+    cout << " File Path | gamma | c "<<endl;
+    string file;
+    double c, gamma;
+    cin>>file>>gamma>>c;
+
+    image = imread(file.c_str() , 1); 
+    if(rgb){
+      IntensityTransformations it;
+      output = it.gammaCorrection(image, gamma, c);
+    } 
+    else{
+      IntensityTransformationsGray it;
+      output = it.gammaCorrection(image, gamma, c);
+    }
+
+   
+    imshow( "Display window", output);  
+    waitKey(0);
+    destroyWindow("Display window");
+  }
+
+  void linear_t(bool rgb){
+    Mat image;
+    Mat output;
+    cout << " File Path | number of points | points (xi,yi) "<<endl;
+    string file;
+    int n;
+    cin>>file>>n;
+    double x[n];
+    double y[n];
+    for(int i=0;i<n;i++){
+      cin>>x[i]>>y[i];
+    }
+
+    image = imread(file.c_str() , 1); 
+    if(rgb){
+      IntensityTransformations it;
+      output = it.piecewiseLinearTransformation(image, x, y, n);
+    } 
+    else{
+      IntensityTransformationsGray it;
+      output = it.piecewiseLinearTransformation(image, x, y, n);
+    }
+
+    imshow( "Display window", output);  
+    waitKey(0);
+    destroyWindow("Display window");
+  }
+
+  void bit_t(bool rgb){
+    Mat image;
+    Mat output;
+    cout << " File Path | Bit "<<endl;
+    string file;
+    int n;
+    cin>>file>>n;
+   
+    image = imread(file.c_str() , 1); 
+    if(rgb){
+      IntensityTransformations it;
+      output = it.bitplaneSlicing(image, n);
+    } 
+    else{
+      IntensityTransformationsGray it;
+      output = it.bitplaneSlicing(image, n);
+    }
+
+    imshow( "Display window", output);  
+    waitKey(0);
+    destroyWindow("Display window");
+  }
+
+  void hist(bool rgb){
+    Mat image;
+    Mat output;
+
+    if(rgb){
+      cout << " File Path | Channels (1:Luminance or 3:RGB) "<<endl;
+      string file;
+      int n;
+      cin>>file>>n;
+     
+      image = imread(file.c_str() , 1); 
+      IntensityTransformations it;
+      if(n == 1) output = it.histogramEqualizationLuminance(image);
+      else if(n == 3) output = it.histogramEqualization(image);
+    } 
+    else{
+      cout << " File Path "<<endl;
+      string file;
+      cin>>file;
+     
+      image = imread(file.c_str() , 1); 
+      IntensityTransformationsGray it;
+      output = it.histogramEqualization(image);
+    }
+
     imshow( "Display window", output);  
     waitKey(0);
     destroyWindow("Display window");
