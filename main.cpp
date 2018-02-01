@@ -15,12 +15,12 @@ class AffineTransformation{
 
   int bilinearInterpolation(Mat &I, int r, int c, double dr, double dc, int k){
     
-    
-
-    double val = I.at<Vec3b>(r,c).val[k]*(1-dr)*(1-dc);
-    val += I.at<Vec3b>(r+1,c).val[k]*(dr)*(1-dc);
-    val += I.at<Vec3b>(r,c+1).val[k]*(1-dr)*(dc);
-    val += I.at<Vec3b>(r+1,c+1).val[k]*(dr)*dc;
+    int row = I.rows;
+    int col = I.cols;
+    double val = I.at<Vec3b>(r%row,c%col).val[k]*(1-dr)*(1-dc);
+    val += I.at<Vec3b>((r+1)%row,c%col).val[k]*(dr)*(1-dc);
+    val += I.at<Vec3b>(r%row,(c+1)%col).val[k]*(1-dr)*(dc);
+    val += I.at<Vec3b>((r+1)%row,(c+1)%col).val[k]*(dr)*dc;
 
     int intensity = round(val);
 
@@ -340,12 +340,16 @@ Mat tiePoints(Mat &I, int *arr_x, int *arr_y, int *arr_x_dist, int *arr_y_dist){
     c_o2d[i] = c_orig_dist.at<double>(i);
     c_d2o[i] = c_dist_orig.at<double>(i);
   }
+
   int max_x = 0;
   int max_y = 0;
   int min_x = 100000000;
   int min_y = 100000000;
   for(int i=0;i<nRows;i++){
     for(int j=0;j<nCols;j++){
+
+       if(I.at<Vec3b>(i,j).val[0] == 0 && I.at<Vec3b>(i,j).val[1] == 0 && I.at<Vec3b>(i,j).val[2] == 0  ) continue;
+
        double x_val = c_d2o[0]*i + c_d2o[1]*j + c_d2o[2]*i*j + c_d2o[3];
        double y_val = c_d2o[4]*i + c_d2o[5]*j + c_d2o[6]*i*j + c_d2o[7];
        max_x = max(max_x, (int)round(x_val));
@@ -355,26 +359,28 @@ Mat tiePoints(Mat &I, int *arr_x, int *arr_y, int *arr_x_dist, int *arr_y_dist){
     }
   }
 
- 
-  cout<<"Reconstruct:"<<max_x<<" "<<max_y<<endl;
+  int dRows = max_x-min_x;
+  int dCols = max_y-min_y;
 
-  Mat output(max_x+min_x, max_y-min_y, CV_8UC3);
-  for(int i=0;i<max_x+min_x;i++){
+  Mat output(dRows, dCols, CV_8UC3);
+
+  for(int i=0;i<dRows;i++){
     p = output.ptr<Vec3b>(i);
-    for(int j=0;j<max_y-min_y;j++){
+    for(int j=0;j<dCols;j++){
       double x_val = c_o2d[0]*i + c_o2d[1]*j + c_o2d[2]*i*j + c_o2d[3];
       double y_val = c_o2d[4]*i + c_o2d[5]*j + c_o2d[6]*i*j + c_o2d[7];
 
       int r = floor(x_val);
       int c = floor(y_val);
-
+      if(r<0 || r>=nRows || c<0 || c>=nCols) continue;
       double dr = x_val - r;
       double dc = y_val - c;
+
       for(int k=0;k<I.channels();k++) p[j][k] = bilinearInterpolation(I, r,c,dr,dc,k);
     }
   }
 
-  return output;
+  return output; 
 }
 
 };
@@ -1117,24 +1123,23 @@ int main( int argc, char** argv ) {
 
   IntensityTransformationsGray a;
   AffineTransformation b;
-  int x_dist[] = {20,276, 460, 716};
-  int y_dist[] = {10, 10, 450, 450};
+ int x_dist[] = {233,455, 13, 235};
+  int y_dist[] = {13, 142, 394, 523};
   int x_orgin[] = {10, 266, 10, 266};
   int y_orgin[] = {10, 10, 450, 450};
 
-  out2 = a.adaptiveHistogramEquilization(image2, 50, 50, 50);
+ 
 
-  cout<<"Orign:"<<image.rows<<" "<<image.cols<<endl;
-
-  img = b.shear(image, 1, 'x', bilinear);
-  cout<<"Sheered:"<<img.rows<< " " << img.cols<<endl;
-  imwrite("sheer.jpg", img);
+  //cout<<"Orign:"<<image.rows<<" "<<image.cols<<endl;
+  cout << image.rows<<" "<<image.cols<<endl;
+  img = b.rotate(image, 30, bilinear);
+  //cout<<"Sheered:"<<img.rows<< " " << img.cols<<endl;
   img = b.tiePoints(img, x_orgin, y_orgin, x_dist, y_dist);
-
-  namedWindow( "Display window", WINDOW_AUTOSIZE );
-
-  imshow( "Display window 2", out2 );  
+  cout << img.rows<<" "<<img.cols<<endl; 
+  imwrite("reconstruct.jpg", img);
+  imshow( "Display window", img );  
   
+  namedWindow( "Display window", WINDOW_AUTOSIZE );
   waitKey(0);
   return 0;
 }
