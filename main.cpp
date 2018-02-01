@@ -981,12 +981,13 @@ Mat histogramEqualization(Mat &I){
 
     if(I.channels() == 3) cvtColor(I, I_gray, CV_BGR2GRAY );
 
+    Mat T(I_gray);
 
     uchar *p,*q, *t, *g;
 
     int intensity = 0;
     for(int i=0;i<nRows;i++){
-      q = I_gray.ptr<uchar>(i);
+      q = T.ptr<uchar>(i);
       for(int j=0;j<nCols;j++){
         // For each grid
         int frequency[256] = {0};
@@ -1016,7 +1017,7 @@ Mat histogramEqualization(Mat &I){
         q[j] = lookuptable[q[j]];
       }
     }
-    return I_gray;
+    return T;
   }
 
 
@@ -1105,8 +1106,9 @@ Mat histogramEqualization(Mat &I){
 
 int main( int argc, char** argv ) {
   
-  Mat image, img, out, image2;
-  image = imread("inp.jpg" , 1);  
+  Mat image, img, out, image2, out2;
+  image = imread("inp.jpg" , 1); 
+  image2 = imread("hist.png", 1); 
   
   if(! image.data ) {
       cout <<  "Could not open or find the image" << endl ;
@@ -1119,14 +1121,19 @@ int main( int argc, char** argv ) {
   int y_dist[] = {10, 10, 450, 450};
   int x_orgin[] = {10, 266, 10, 266};
   int y_orgin[] = {10, 10, 450, 450};
+
+  out2 = a.adaptiveHistogramEquilization(image2, 50, 50, 50);
+
   cout<<"Orign:"<<image.rows<<" "<<image.cols<<endl;
+
   img = b.shear(image, 1, 'x', bilinear);
   cout<<"Sheered:"<<img.rows<< " " << img.cols<<endl;
   imwrite("sheer.jpg", img);
   img = b.tiePoints(img, x_orgin, y_orgin, x_dist, y_dist);
 
   namedWindow( "Display window", WINDOW_AUTOSIZE );
-  imshow( "Display window", img );    
+
+  imshow( "Display window 2", out2 );  
   
   waitKey(0);
   return 0;
