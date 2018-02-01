@@ -880,7 +880,6 @@ Mat histogramEqualization(Mat &I){
       lookuptable[i] = newVal;
     }
 
-
     for(int i=0;i<nRows;i++){
       p = I_gray.ptr<uchar>(i);
       q = output.ptr<uchar>(i);
@@ -892,7 +891,6 @@ Mat histogramEqualization(Mat &I){
   }
 
   Mat adaptiveHistogramEquilizationWindow(Mat &I, int tile){
-    // Do local he for tile/2, tile/2, then interpolate.
 
     int nRows = I.rows;
     int nCols = I.cols;
@@ -902,12 +900,11 @@ Mat histogramEqualization(Mat &I){
     if(I.channels() == 3) cvtColor(I, I_gray, CV_BGR2GRAY );
 
     Mat T(I_gray);
-    Mat output(nRows,nCols,CV_8UC1);
 
     uchar *p,*q, *t;
-
+    int intensity = 0;
     for(int i=0;i<nRows;i++){
-
+      q = T.ptr<uchar>(i);
       for(int j=0;j<nCols;j++){
         // For each grid
         int frequency[256] = {0};
@@ -916,19 +913,18 @@ Mat histogramEqualization(Mat &I){
         int start_x = i - tile/2, start_y = j - tile/2;
         int end_x = i + tile/2, end_y = j + tile/2;
 
-          int dim_x = 0;
-          int dim_y = 0;
-          for(int x = (start_x<0? 0 : start_x); x < (end_x >= nRows? nRows: end_x); x++){
-            p = I_gray.ptr<uchar>(x);
-            t = T.ptr<uchar>(x);
-            dim_y = 0;
-            for(int y = (start_y<0? 0 : start_y ); y < (end_y >= nCols? nCols: end_y); y++){
-              frequency[p[y]]++;
-              t[y] = p[y];
-              dim_y++;
-              }
-            dim_x++;
+        int dim_x = 0;
+        int dim_y = 0;
+        for(int x = (start_x<0? 0 : start_x); x < (end_x >= nRows? nRows: end_x); x++){
+          t = I_gray.ptr<uchar>(x);
+          dim_y = 0;
+          for(int y = (start_y<0? 0 : start_y ); y < (end_y >= nCols? nCols: end_y); y++){
+            frequency[t[y]]++;
+            if(x == i && y == j) intensity = t[y];
+            dim_y++;
             }
+          dim_x++;
+          }
 
           int cumulative_sum = 0;
 
@@ -936,14 +932,14 @@ Mat histogramEqualization(Mat &I){
             cumulative_sum += frequency[x];
             lookuptable[x] = round(255*(cumulative_sum)*1.0/(dim_x*dim_y));
           }
-          T.at<uchar>(i,j) = lookuptable[T.at<uchar>(i,j)];
+          q[j] = lookuptable[intensity];
         }
       }
 
     return T;
   }
 
-  Mat adaptiveHistogramEquilization(Mat &I, int tile, int grid_x, int grid_y){
+  Mat adaptiveHistogramEquilizationTile(Mat &I, int tile, int grid_x, int grid_y){
     // Do local he for tile/2, tile/2, then interpolate.
 
     int nRows = I.rows;
@@ -960,9 +956,9 @@ Mat histogramEqualization(Mat &I){
     double scale_x = nRows*1.0/(grid_x);
     double scale_y = nCols*1.0/(grid_y);
     int intensity = 0;
-    for(int i=0;i<=grid_x;i++){
+    for(int i=0;i<grid_x;i++){
       g = grid.ptr<uchar>(i);
-      for(int j=0;j<=grid_y;j++){
+      for(int j=0;j<grid_y;j++){
         // For each grid
         int frequency[256] = {0};
         int lookuptable[256];
@@ -996,8 +992,6 @@ Mat histogramEqualization(Mat &I){
       }
     }
 
-    // Grid is filled
-
     for(int i=0;i<nRows;i++){
       p = I_gray.ptr<uchar>(i);
       for(int j=0;j<nCols;j++){
@@ -1009,6 +1003,89 @@ Mat histogramEqualization(Mat &I){
         int dc = j/scale_y - c;
 
         p[j] = bilinearInterpolation(grid,r,c,dr,dc);
+      }
+    }
+    return I_gray;
+  }
+
+  Mat adaptiveHistogramEquilization(Mat &I, int tile, int grid_x, int grid_y){
+    // Do local he for tile/2, tile/2, then interpolate.
+
+    int nRows = I.rows;
+    int nCols = I.cols;
+
+    Mat I_gray(I);
+
+    if(I.channels() == 3) cvtColor(I, I_gray, CV_BGR2GRAY );
+
+    int size[3] = {grid_x, grid_y, 256};
+    Mat grid(3, size, CV_8UC1);
+    cout<<"Fine"<<endl;
+    int cdf[256][grid_x][grid_y];
+
+    uchar *p,*q, *t, *g;
+
+    double scale_x = nRows*1.0/(grid_x);
+    double scale_y = nCols*1.0/(grid_y);
+    for(int i=0;i<grid_x;i++){
+
+      for(int j=0;j<grid_y;j++){
+        // For each grid
+        int frequency[256] = {0};
+        int lookuptable[256];
+
+        int origin_i = round(i*scale_x);
+        int origin_j = round(j*scale_y);
+
+        int start_x = origin_i - tile/2, start_y = origin_j - tile/2;
+        int end_x = origin_i + tile/2, end_y = origin_j + tile/2;
+
+        int dim_x = 0;
+        int dim_y = 0;
+        for(int x = (start_x<0? 0 : start_x); x < (end_x >= nRows? nRows: end_x); x++){
+          p = I_gray.ptr<uchar>(x);
+          dim_y = 0;
+          for(int y = (start_y<0? 0 : start_y ); y < (end_y >= nCols? nCols: end_y); y++){
+            frequency[p[y]]++;
+            dim_y++;
+          }
+          dim_x++;
+        }
+
+        int cumulative_sum = 0;
+
+        for(int x=0;x<256;x++){
+          cumulative_sum += frequency[x];
+          lookuptable[x] = round(255*(cumulative_sum)*1.0/(dim_x*dim_y));
+          cdf[x][i][j] = lookuptable[x];
+          cout<<cdf[x][i][j]<< " ";
+        }
+      }
+    }
+
+    for(int i=0;i<nRows;i++){
+      p = I_gray.ptr<uchar>(i);
+      for(int j=0;j<nCols;j++){
+
+        int r = floor(i/scale_x);
+        int c = floor(j/scale_y);
+
+        r = (r<0?0:r);
+        r = (r>=nRows?nRows-1:r);
+
+        c = (c<0?0:c);
+        c = (c>=nCols?nCols-1:c);
+        
+        int dr = i/scale_x - r;
+        int dc = j/scale_y - c;
+        int in = p[j];
+
+        double val = cdf[in][r][c]*(1-dr)*(1-dc);
+        val += cdf[in][r+1][c]*(dr)*(1-dc);
+        val += cdf[in][r][c+1]*(1-dr)*(dc);
+        val += cdf[in][r+1][c+1]*(dr)*dc;
+        p[j] = round(val);
+
       }
     }
     return I_gray;
@@ -1030,9 +1107,12 @@ int main( int argc, char** argv ) {
   IntensityTransformationsGray a;
   AffineTransformation b;
 
-  img = a.adaptiveHistogramEquilization(image, 50, image.rows, image.cols);
+  img = a.adaptiveHistogramEquilization(image, 64, 30, 30);
   imshow( "Display window", img );
-
+  img = a.adaptiveHistogramEquilizationWindow(image, 64);
+  imshow( "Display window 2", img );
+  img = a.histogramEqualization(image);
+  imshow( "Display window 3", img );
   namedWindow( "Display window", WINDOW_AUTOSIZE );
   
   waitKey(0);
