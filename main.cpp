@@ -348,7 +348,7 @@ Mat tiePoints(Mat &I, int *arr_x, int *arr_y, int *arr_x_dist, int *arr_y_dist){
   for(int i=0;i<nRows;i++){
     for(int j=0;j<nCols;j++){
 
-       if(I.at<Vec3b>(i,j).val[0] == 0 && I.at<Vec3b>(i,j).val[1] == 0 && I.at<Vec3b>(i,j).val[2] == 0  ) continue;
+       if(I.at<Vec3b>(i,j).val[0] == 0 && I.at<Vec3b>(i,j).val[1] == 0 && I.at<Vec3b>(i,j).val[2] == 0 ) continue;
 
        double x_val = c_d2o[0]*i + c_d2o[1]*j + c_d2o[2]*i*j + c_d2o[3];
        double y_val = c_d2o[4]*i + c_d2o[5]*j + c_d2o[6]*i*j + c_d2o[7];
@@ -748,6 +748,89 @@ Mat histogramEqualization(Mat &I){
     return I_LAB;
   }
 
+  Mat adaptiveHistogramEquilization(Mat &I, int tile, int grid_x, int grid_y){
+    // Do local he for tile/2, tile/2, then interpolate.
+
+    int nRows = I.rows;
+    int nCols = I.cols;
+
+    Mat I_gray(I);
+
+    Mat I_LAB, D_LAB;
+    cvtColor(I, I_LAB, CV_BGR2Lab );
+
+    int size[3] = {grid_x, grid_y, 256};
+    Mat grid(3, size, CV_8UC(1));
+  
+
+    Vec3b *p,*q, *t, *g;
+
+    double scale_x = nRows*1.0/(grid_x);
+    double scale_y = nCols*1.0/(grid_y);
+    for(int i=0;i<grid_x;i++){
+
+      for(int j=0;j<grid_y;j++){
+        // For each grid
+        int frequency[256] = {0};
+        int lookuptable[256];
+
+        int origin_i = round(i*scale_x);
+        int origin_j = round(j*scale_y);
+
+        int start_x = origin_i - tile/2, start_y = origin_j - tile/2;
+        int end_x = origin_i + tile/2, end_y = origin_j + tile/2;
+
+        int dim_x = 0;
+        int dim_y = 0;
+        for(int x = (start_x<0? 0 : start_x); x < (end_x >= nRows? nRows: end_x); x++){
+          p = I_LAB.ptr<Vec3b>(x);
+          dim_y = 0;
+          for(int y = (start_y<0? 0 : start_y ); y < (end_y >= nCols? nCols: end_y); y++){
+            frequency[p[y][0]]++;
+            dim_y++;
+          }
+          dim_x++;
+        }
+
+        int cumulative_sum = 0;
+
+        for(int x=0;x<256;x++){
+          cumulative_sum += frequency[x];
+          lookuptable[x] = round(255*(cumulative_sum)*1.0/(dim_x*dim_y));
+          grid.at<uchar>(i,j,x) = lookuptable[x];
+        }
+      }
+    }
+
+    // Iterpolation
+    for(int i=0;i<nRows;i++){
+      p = I_LAB.ptr<Vec3b>(i);
+      for(int j=0;j<nCols;j++){
+
+        int r = floor(i/scale_x);
+        int c = floor(j/scale_y);
+
+        r = (r<0?0:r);
+        r = (r>grid_x-2?grid_x-2:r);
+
+        c = (c<0?0:c);
+        c = (c>grid_y-2?grid_y-2:c);
+        
+        int dr = i/scale_x - r;
+        int dc = j/scale_y - c;
+        int in = p[j][0];
+        double val = grid.at<uchar>(r,c,in)*(1-dr)*(1-dc);
+        val += grid.at<uchar>(r+1,c,in)*(dr)*(1-dc);
+        val += grid.at<uchar>(r,c+1,in)*(dc)*(1-dr);
+        val += grid.at<uchar>(r+1,c+1,in)*(dr)*(dc);
+        p[j][0] = round(val);
+
+      }
+    }
+    cvtColor(I_LAB, I_LAB, CV_Lab2BGR);
+    return I_LAB;
+  }
+
 };
 
 class IntensityTransformationsGray: Transformations{
@@ -1110,36 +1193,208 @@ Mat histogramEqualization(Mat &I){
 };
 
 
-int main( int argc, char** argv ) {
-  
-  Mat image, img, out, image2, out2;
-  image = imread("inp.jpg" , 1); 
-  image2 = imread("hist.png", 1); 
-  
-  if(! image.data ) {
-      cout <<  "Could not open or find the image" << endl ;
-      return -1;
+
+class Menu{
+  void resize(){
+    Mat image;
+    Mat output;
+    cout << " File Path | Factor | Interpolation (nearest or bilinear)"<<endl;
+    string file, interpolation;
+    double factor;
+    cin>>file>>factor>>interpolation;
+
+    image = imread(file.c_str() , 1); 
+    AffineTransformation at;
+
+    if(interpolation == "nearest") output = at.resize(image, factor, nearest);
+    else if(interpolation == "bilinear") output = at.resize(image, factor, bilinear);
+    else{
+      cout << "Invalid Command";
+      return;
+    } 
+    imshow( "Display window", output);  
+    waitKey(0);
+    destroyWindow("Display window");
+  }
+
+  void scale(){
+    Mat image;
+    Mat output;
+    cout << " File Path | Factor X | Factor Y | Interpolation (nearest or bilinear)"<<endl;
+    string file, interpolation;
+    double factor_x, factor_y;
+    cin>>file>>factor_x>>factor_y>>interpolation;
+
+    image = imread(file.c_str() , 1); 
+    AffineTransformation at;
+
+    if(interpolation == "nearest") output = at.scale(image, factor_x, factor_y, nearest);
+    else if(interpolation == "bilinear") output = at.scale(image, factor_x, factor_y, bilinear);
+    else{
+      cout << "Invalid Command";
+      return;
+    } 
+    imshow( "Display window", output);  
+    waitKey(0);
+    destroyWindow("Display window");
+  }
+
+  void rotate(){
+    Mat image;
+    Mat output;
+    cout << " File Path | Degree | Interpolation (nearest or bilinear)"<<endl;
+    string file, interpolation;
+    double factor;
+    cin>>file>>factor>>interpolation;
+
+    image = imread(file.c_str() , 1); 
+    AffineTransformation at;
+
+    if(interpolation == "nearest") output = at.rotate(image, factor, nearest);
+    else if(interpolation == "bilinear") output = at.rotate(image, factor, bilinear);
+    else{
+      cout << "Invalid Command";
+      return;
+    } 
+    imshow( "Display window", output);  
+    waitKey(0);
+    destroyWindow("Display window");
+  }
+
+  void translate(){
+    Mat image;
+    Mat output;
+    cout << " File Path | Factor X | Factor Y "<<endl;
+    string file;
+    int factor_x, factor_y;
+    cin>>file>>factor_x>>factor_y;
+
+    image = imread(file.c_str() , 1); 
+    AffineTransformation at;
+
+    output = at.translate(image, factor_x, factor_y);
+   
+    imshow( "Display window", output);  
+    waitKey(0);
+    destroyWindow("Display window");
+  }
+
+   void shear(){
+    Mat image;
+    Mat output;
+    cout << " File Path | Axis (x or y) | Factor | Interpolation"<<endl;
+    string file, interpolation;
+    double factor;
+    char axis;
+    cin>>file>>axis>>factor>>interpolation;
+
+    image = imread(file.c_str() , 1); 
+    AffineTransformation at;
+
+    if(interpolation == "nearest") output = at.shear(image, factor, axis, nearest);
+    else if(interpolation == "bilinear") output = at.shear(image, factor, axis, bilinear);
+    else{
+      cout << "Invalid Command";
+      return;
+    } 
+   
+    imshow( "Display window", output);  
+    waitKey(0);
+    destroyWindow("Display window");
+  }
+
+  void tie(){
+    Mat image;
+    Mat output;
+    cout << " File Path | Original Image [(x1,y1), .. (x4,y4)] | Distorted Image [(x1,y1), .. (x4,y4)]"<<endl;
+    string file;
+    int x_orig[4];
+    int y_orig[4];
+    int x_dist[4];
+    int y_dist[4];
+    cin>>file;
+
+    for(int i=0;i<4;i++) cin>>x_orig[i]>>y_orig[i];
+    for(int i=0;i<4;i++) cin>>x_dist[i]>>y_dist[i];
+
+    image = imread(file.c_str() , 1); 
+    AffineTransformation at;
+
+    output = at.tiePoints(image, x_orig, y_orig, x_dist, y_dist);
+   
+    imshow( "Display window", output);  
+    waitKey(0);
+    destroyWindow("Display window");
+  }
+
+  void log_t(bool rgb){
+    Mat image;
+    Mat output;
+    cout << " File Path | c "<<endl;
+    string file;
+    double c;
+    cin>>file>>c;
+
+    image = imread(file.c_str() , 1); 
+    if(rgb){
+      IntensityTransformations it;
+      output = it.logTransformation(image, c);
+    } 
+    else{
+      IntensityTransformationsGray it;
+      output = it.logTransformation(image, c);
     }
 
-  IntensityTransformationsGray a;
-  AffineTransformation b;
- int x_dist[] = {233,455, 13, 235};
-  int y_dist[] = {13, 142, 394, 523};
-  int x_orgin[] = {10, 266, 10, 266};
-  int y_orgin[] = {10, 10, 450, 450};
+   
+    imshow( "Display window", output);  
+    waitKey(0);
+    destroyWindow("Display window");
+  }
 
- 
 
-  //cout<<"Orign:"<<image.rows<<" "<<image.cols<<endl;
-  cout << image.rows<<" "<<image.cols<<endl;
-  img = b.rotate(image, 30, bilinear);
-  //cout<<"Sheered:"<<img.rows<< " " << img.cols<<endl;
-  img = b.tiePoints(img, x_orgin, y_orgin, x_dist, y_dist);
-  cout << img.rows<<" "<<img.cols<<endl; 
-  imwrite("reconstruct.jpg", img);
-  imshow( "Display window", img );  
+public:
+  void help(){
+    cout << " Image Resize (Uniform Scale) : imresize"<<endl;
+    cout << " Image Scale (Non-Uniform Scale) : imscale" << endl;
+    cout << " Image Rotation (Degrees) : imrotate "<<endl;
+    cout << " Image Translation (By pixel) : imtranslate"<<endl;
+    cout << " Image Shear : imshear"<<endl;
+    cout << " Image Reconstruction (Tie Points) : imrecon"<<endl;
+    cout << " Log Transformation : log"<<endl;
+    cout << " Gamma Transformation : gamma"<<endl;
+    cout << " Piecewise Linear Transformation : linear"<<endl;
+    cout << " Bitplane Slicing : bitslice"<<endl;
+    cout << " Histogram Equalization : histequal "<<endl;
+    cout << " Adaptive Histogram Equalization : adapthist"<<endl;
+    cout << " Histogram Matching : histmatch"<<endl<<endl;
+    cout << " To see the list again, just type help"<<endl;
+    cout << " To exit, type exit"<<endl;
   
+  }
+
+
+  void init(){
+    bool rgb;
+  }
+};
+
+int main( int argc, char** argv ) {
+  
+  // Mat image, img, out, image2, out2;
+  // image = imread("hist3.png" , 1); 
+  
+  // if(! image.data ) {
+  //     cout <<  "Could not open or find the image" << endl ;
+  //     return -1;
+  //   }
+  Menu m;
+  m.help();
+  // IntensityTransformationsGray a;
+  // AffineTransformation b;
+  // img = a.adaptiveHistogramEquilization(image, 50, 100, 100); 
+  // imshow( "Display window", img );  
+  // imwrite("sheer.jpg",image);
   namedWindow( "Display window", WINDOW_AUTOSIZE );
-  waitKey(0);
+  // waitKey(0);
   return 0;
 }
