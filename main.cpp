@@ -831,6 +831,55 @@ Mat histogramEqualization(Mat &I){
     return I_LAB;
   }
 
+  Mat adaptiveHistogramEquilizationWindow(Mat &I, int tile){
+
+    int nRows = I.rows;
+    int nCols = I.cols;
+
+    Mat I_gray(I);
+    Mat I_LAB, D_LAB;
+    cvtColor(I, I_LAB, CV_BGR2Lab );
+
+    Mat T(I_LAB);
+
+    Vec3b *p,*q, *t, *g;
+
+    int intensity = 0;
+    for(int i=0;i<nRows;i++){
+      q = T.ptr<Vec3b>(i);
+      for(int j=0;j<nCols;j++){
+        // For each grid
+        int frequency[256] = {0};
+        int lookuptable[256];
+
+        int start_x = i - tile/2, start_y = j - tile/2;
+        int end_x = i + tile/2, end_y = j + tile/2;
+
+        int dim_x = 0;
+        int dim_y = 0;
+        for(int x = (start_x<0? 0 : start_x); x < (end_x >= nRows? nRows: end_x); x++){
+          p = I_LAB.ptr<Vec3b>(x);
+          dim_y = 0;
+          for(int y = (start_y<0? 0 : start_y ); y < (end_y >= nCols? nCols: end_y); y++){
+            frequency[p[y][0]]++;
+            dim_y++;
+          }
+          dim_x++;
+        }
+
+        int cumulative_sum = 0;
+
+        for(int x=0;x<256;x++){
+          cumulative_sum += frequency[x];
+          lookuptable[x] = round(255*(cumulative_sum)*1.0/(dim_x*dim_y));
+        }
+        q[j][0] = lookuptable[q[j][0]];
+      }
+    }
+    cvtColor(T,T, CV_Lab2BGR);
+    return T;
+  }
+
 };
 
 class IntensityTransformationsGray: Transformations{
@@ -1484,6 +1533,94 @@ class Menu{
     destroyWindow("Display window");
   }
 
+  void adapthist(bool rgb){
+    Mat image;
+    Mat output;
+
+    if(rgb){
+      cout << " File Path | Method (window or tile) "<<endl;
+      string file, method;
+      cin>>file>>method;
+      
+      image = imread(file.c_str() , 1); 
+      IntensityTransformations it;
+
+      if(method == "window"){
+          cout << " window -> Window Size (n: where window is nxn) "<<endl;
+          int n;
+          cin>>n;
+          output = it.adaptiveHistogramEquilizationWindow(image, n);
+      }
+
+      else if(method == "tile"){
+          cout << " tile -> Tile Size (n: where window is nxn) | Grid X | Grid Y "<<endl;
+          int n,x,y;
+          cin>>n>>x>>y;
+          output = it.adaptiveHistogramEquilization(image, n, x, y);
+      }
+    } 
+    else{
+      cout << " File Path | Method (window or tile) "<<endl;
+      string file, method;
+      cin>>file>>method;
+      
+      image = imread(file.c_str() , 1); 
+      IntensityTransformationsGray it;
+
+      if(method == "window"){
+          cout << " window -> Window Size (n: where window is nxn) "<<endl;
+          int n;
+          cin>>n;
+          output = it.adaptiveHistogramEquilizationWindow(image, n);
+      }
+
+      else if(method == "tile"){
+          cout << " tile -> Tile Size (n: where window is nxn) | Grid X | Grid Y "<<endl;
+          int n,x,y;
+          cin>>n>>x>>y;
+          output = it.adaptiveHistogramEquilization(image, n, x, y);
+      }
+    }
+
+    imshow( "Display window", output);  
+    waitKey(0);
+    destroyWindow("Display window");
+  }
+
+  void histmatch(bool rgb){
+    Mat image_input, image_reference;
+    Mat output;
+
+    if(rgb){
+      cout << " File Path (input) | File Path (reference) | Channels (1:Luminance or 3:RGB) "<<endl;
+      string file_input, file_reference;
+      int n;
+      cin>>file_input>>file_reference>>n;
+     
+      image_input = imread(file_input.c_str() , 1); 
+      image_reference = imread(file_reference.c_str() , 1);
+
+      IntensityTransformations it;
+      if(n == 1) output = it.histogramMatchingLuminance(image_input, image_reference);
+      else if(n == 3) output = it.histogramMatching(image_input, image_reference);
+    } 
+    else{
+      cout << " File Path (input) | File Path (reference) "<<endl;
+      string file_input, file_reference;
+      cin>>file_input>>file_reference;
+     
+      image_input = imread(file_input.c_str() , 1); 
+      image_reference = imread(file_reference.c_str() , 1);
+
+      IntensityTransformationsGray it;
+      output = it.histogramMatching(image_input, image_reference);
+    }
+
+    imshow( "Display window", output);  
+    waitKey(0);
+    destroyWindow("Display window");
+  }
+
 
 public:
   void help(){
@@ -1513,21 +1650,21 @@ public:
 
 int main( int argc, char** argv ) {
   
-  // Mat image, img, out, image2, out2;
-  // image = imread("hist3.png" , 1); 
+   Mat image, img, out, image2, out2;
+   image = imread("hist.png" , 1); 
   
   // if(! image.data ) {
   //     cout <<  "Could not open or find the image" << endl ;
   //     return -1;
   //   }
   Menu m;
-  m.help();
-  // IntensityTransformationsGray a;
+  //m.help();
+   IntensityTransformationsGray a;
   // AffineTransformation b;
-  // img = a.adaptiveHistogramEquilization(image, 50, 100, 100); 
-  // imshow( "Display window", img );  
+   img = a.adaptiveHistogramEquilization(image, 64, 128, 128); 
+   imshow( "Display window", img );  
   // imwrite("sheer.jpg",image);
   namedWindow( "Display window", WINDOW_AUTOSIZE );
-  // waitKey(0);
+  waitKey(0);
   return 0;
 }
