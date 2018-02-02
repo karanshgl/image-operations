@@ -1,0 +1,14 @@
+resize()
+scale
+rotate
+translate
+shear
+tie
+
+log_t
+gamma_t
+linear_t
+bit_t
+hist
+adapthist
+histmatch

@@ -1272,15 +1272,27 @@ Mat bitplaneSlicing(Mat &I, int bit){
 
 
 class Menu{
+
+  bool check(Mat I){
+    if(! I.data ) {
+       cout <<  "Could not open or find the image" << endl ;
+       return false;
+     }
+     return true;
+  }
+
   void resize(){
     Mat image;
     Mat output;
-    cout << " File Path | Factor | Interpolation (nearest or bilinear)"<<endl;
+    cout << "imresize>> File Path | Factor | Interpolation (nearest or bilinear)"<<endl;
     string file, interpolation;
     double factor;
     cin>>file>>factor>>interpolation;
 
     image = imread(file.c_str() , 1); 
+
+    if(!check(image)) return;
+
     AffineTransformation at;
 
     if(interpolation == "nearest") output = at.resize(image, factor, nearest);
@@ -1297,12 +1309,15 @@ class Menu{
   void scale(){
     Mat image;
     Mat output;
-    cout << " File Path | Factor X | Factor Y | Interpolation (nearest or bilinear)"<<endl;
+    cout << "imscale>> File Path | Factor X | Factor Y | Interpolation (nearest or bilinear)"<<endl;
     string file, interpolation;
     double factor_x, factor_y;
     cin>>file>>factor_x>>factor_y>>interpolation;
 
     image = imread(file.c_str() , 1); 
+
+    if(!check(image)) return;
+
     AffineTransformation at;
 
     if(interpolation == "nearest") output = at.scale(image, factor_x, factor_y, nearest);
@@ -1319,12 +1334,15 @@ class Menu{
   void rotate(){
     Mat image;
     Mat output;
-    cout << " File Path | Degree | Interpolation (nearest or bilinear)"<<endl;
+    cout << "imrotate>> File Path | Degree | Interpolation (nearest or bilinear)"<<endl;
     string file, interpolation;
     double factor;
     cin>>file>>factor>>interpolation;
 
     image = imread(file.c_str() , 1); 
+
+    if(!check(image)) return;
+
     AffineTransformation at;
 
     if(interpolation == "nearest") output = at.rotate(image, factor, nearest);
@@ -1341,12 +1359,15 @@ class Menu{
   void translate(){
     Mat image;
     Mat output;
-    cout << " File Path | Factor X | Factor Y "<<endl;
+    cout << "imtranslate>> File Path | Factor X | Factor Y "<<endl;
     string file;
     int factor_x, factor_y;
     cin>>file>>factor_x>>factor_y;
 
     image = imread(file.c_str() , 1); 
+
+    if(!check(image)) return;
+
     AffineTransformation at;
 
     output = at.translate(image, factor_x, factor_y);
@@ -1359,13 +1380,16 @@ class Menu{
    void shear(){
     Mat image;
     Mat output;
-    cout << " File Path | Axis (x or y) | Factor | Interpolation"<<endl;
+    cout << "imshear>> File Path | Axis (x or y) | Factor | Interpolation"<<endl;
     string file, interpolation;
     double factor;
     char axis;
     cin>>file>>axis>>factor>>interpolation;
 
     image = imread(file.c_str() , 1); 
+
+    if(!check(image)) return;
+
     AffineTransformation at;
 
     if(interpolation == "nearest") output = at.shear(image, factor, axis, nearest);
@@ -1383,7 +1407,7 @@ class Menu{
   void tie(){
     Mat image;
     Mat output;
-    cout << " File Path | Original Image [(x1,y1), .. (x4,y4)] | Distorted Image [(x1,y1), .. (x4,y4)]"<<endl;
+    cout << "imrecon>> File Path | Original Image [(x1,y1), .. (x4,y4)] | Distorted Image [(x1,y1), .. (x4,y4)]"<<endl;
     string file;
     int x_orig[4];
     int y_orig[4];
@@ -1395,6 +1419,9 @@ class Menu{
     for(int i=0;i<4;i++) cin>>x_dist[i]>>y_dist[i];
 
     image = imread(file.c_str() , 1); 
+
+    if(!check(image)) return;
+
     AffineTransformation at;
 
     output = at.tiePoints(image, x_orig, y_orig, x_dist, y_dist);
@@ -1404,15 +1431,43 @@ class Menu{
     destroyWindow("Display window");
   }
 
+  void negative(bool rgb){
+    Mat image;
+    Mat output;
+    cout << "negative>> File Path "<<endl;
+    string file;
+    cin>>file;
+
+    image = imread(file.c_str() , 1); 
+
+    if(!check(image)) return;
+
+    if(rgb){
+      IntensityTransformations it;
+      output = it.negative(image);
+    } 
+    else{
+      IntensityTransformationsGray it;
+      output = it.negative(image);
+    }
+   
+    imshow( "Display window", output);  
+    waitKey(0);
+    destroyWindow("Display window");
+  }
+
   void log_t(bool rgb){
     Mat image;
     Mat output;
-    cout << " File Path | c "<<endl;
+    cout << "log>> File Path | c "<<endl;
     string file;
     double c;
     cin>>file>>c;
 
     image = imread(file.c_str() , 1); 
+
+    if(!check(image)) return;
+
     if(rgb){
       IntensityTransformations it;
       output = it.logTransformation(image, c);
@@ -1431,12 +1486,15 @@ class Menu{
   void gamma_t(bool rgb){
     Mat image;
     Mat output;
-    cout << " File Path | gamma | c "<<endl;
+    cout << "gamma>> File Path | gamma | c "<<endl;
     string file;
     double c, gamma;
     cin>>file>>gamma>>c;
 
     image = imread(file.c_str() , 1); 
+
+    if(!check(image)) return;
+
     if(rgb){
       IntensityTransformations it;
       output = it.gammaCorrection(image, gamma, c);
@@ -1455,7 +1513,7 @@ class Menu{
   void linear_t(bool rgb){
     Mat image;
     Mat output;
-    cout << " File Path | number of points | points (xi,yi) "<<endl;
+    cout << "linear>> File Path | number of points | points (xi,yi) "<<endl;
     string file;
     int n;
     cin>>file>>n;
@@ -1466,6 +1524,9 @@ class Menu{
     }
 
     image = imread(file.c_str() , 1); 
+
+    if(!check(image)) return;
+
     if(rgb){
       IntensityTransformations it;
       output = it.piecewiseLinearTransformation(image, x, y, n);
@@ -1483,12 +1544,15 @@ class Menu{
   void bit_t(bool rgb){
     Mat image;
     Mat output;
-    cout << " File Path | Bit "<<endl;
+    cout << "bitslice>> File Path | Bit(1-8) "<<endl;
     string file;
     int n;
     cin>>file>>n;
    
     image = imread(file.c_str() , 1); 
+
+    if(!check(image)) return;
+
     if(rgb){
       IntensityTransformations it;
       output = it.bitplaneSlicing(image, n);
@@ -1508,12 +1572,15 @@ class Menu{
     Mat output;
 
     if(rgb){
-      cout << " File Path | Channels (1:Luminance or 3:RGB) "<<endl;
+      cout << "hist>> File Path | Channels (1:Luminance or 3:RGB) "<<endl;
       string file;
       int n;
       cin>>file>>n;
      
       image = imread(file.c_str() , 1); 
+
+      if(!check(image)) return;
+
       IntensityTransformations it;
       if(n == 1) output = it.histogramEqualizationLuminance(image);
       else if(n == 3) output = it.histogramEqualization(image);
@@ -1538,11 +1605,14 @@ class Menu{
     Mat output;
 
     if(rgb){
-      cout << " File Path | Method (window or tile) "<<endl;
+      cout << "adapthist>> File Path | Method (window or tile) "<<endl;
       string file, method;
       cin>>file>>method;
       
       image = imread(file.c_str() , 1); 
+
+      if(!check(image)) return;
+
       IntensityTransformations it;
 
       if(method == "window"){
@@ -1560,7 +1630,7 @@ class Menu{
       }
     } 
     else{
-      cout << " File Path | Method (window or tile) "<<endl;
+      cout << "adapthist>> File Path | Method (window or tile) "<<endl;
       string file, method;
       cin>>file>>method;
       
@@ -1592,20 +1662,22 @@ class Menu{
     Mat output;
 
     if(rgb){
-      cout << " File Path (input) | File Path (reference) | Channels (1:Luminance or 3:RGB) "<<endl;
+      cout << "histmatch>> File Path (input) | File Path (reference) | Channels (1:Luminance or 3:RGB) "<<endl;
       string file_input, file_reference;
       int n;
       cin>>file_input>>file_reference>>n;
      
       image_input = imread(file_input.c_str() , 1); 
+      if(!check(image_input)) return;
       image_reference = imread(file_reference.c_str() , 1);
+      if(!check(image_reference)) return;
 
       IntensityTransformations it;
       if(n == 1) output = it.histogramMatchingLuminance(image_input, image_reference);
       else if(n == 3) output = it.histogramMatching(image_input, image_reference);
     } 
     else{
-      cout << " File Path (input) | File Path (reference) "<<endl;
+      cout << "histmatch>> File Path (input) | File Path (reference) "<<endl;
       string file_input, file_reference;
       cin>>file_input>>file_reference;
      
@@ -1624,12 +1696,14 @@ class Menu{
 
 public:
   void help(){
+    cout << endl;
     cout << " Image Resize (Uniform Scale) : imresize"<<endl;
     cout << " Image Scale (Non-Uniform Scale) : imscale" << endl;
     cout << " Image Rotation (Degrees) : imrotate "<<endl;
     cout << " Image Translation (By pixel) : imtranslate"<<endl;
     cout << " Image Shear : imshear"<<endl;
     cout << " Image Reconstruction (Tie Points) : imrecon"<<endl;
+    cout << " Negative : negative"<<endl;
     cout << " Log Transformation : log"<<endl;
     cout << " Gamma Transformation : gamma"<<endl;
     cout << " Piecewise Linear Transformation : linear"<<endl;
@@ -1637,6 +1711,7 @@ public:
     cout << " Histogram Equalization : histequal "<<endl;
     cout << " Adaptive Histogram Equalization : adapthist"<<endl;
     cout << " Histogram Matching : histmatch"<<endl<<endl;
+    cout << " To work on RGB, type rgb. For Grayscale type gray. By default, its grayscale."<<endl<<endl;
     cout << " To see the list again, just type help"<<endl;
     cout << " To exit, type exit"<<endl;
   
@@ -1644,27 +1719,50 @@ public:
 
 
   void init(){
-    bool rgb;
+    bool rgb = false;
+    bool run = true;
+    string s, mode = "Gray";
+
+    help();
+    while(run){
+      if(rgb) mode = "RGB";
+      else mode = "Gray";
+      cout<<endl<<mode<<">> ";
+      cin>>s;
+      if(s == "help") help();
+      else if(s == "imresize") resize();
+      else if(s == "imscale") scale();
+      else if(s == "imrotate") rotate();
+      else if(s == "imtranslate") translate();
+      else if(s == "imshear") translate();
+      else if(s == "imrecon") tie();
+      else if(s == "negative") negative(rgb);
+      else if(s == "log") log_t(rgb);
+      else if(s == "gamma") gamma_t(rgb);
+      else if(s == "linear") linear_t(rgb);
+      else if(s == "bitslice") bit_t(rgb);
+      else if(s == "histequal") hist(rgb);
+      else if(s == "adapthist") adapthist(rgb);
+      else if(s == "histmatch") histmatch(rgb);
+      else if(s == "rgb") rgb = true;
+      else if(s == "gray") rgb = false;
+      else if(s == "exit") run = false;
+      else cout<<">> Invalid Command. Type help for help."<<endl;
+    }
   }
 };
 
 int main( int argc, char** argv ) {
   
-   Mat image, img, out, image2, out2;
-   image = imread("hist.png" , 1); 
+
   
   // if(! image.data ) {
   //     cout <<  "Could not open or find the image" << endl ;
   //     return -1;
   //   }
   Menu m;
-  //m.help();
-   IntensityTransformationsGray a;
-  // AffineTransformation b;
-   img = a.adaptiveHistogramEquilization(image, 64, 128, 128); 
-   imshow( "Display window", img );  
-  // imwrite("sheer.jpg",image);
-  namedWindow( "Display window", WINDOW_AUTOSIZE );
+  m.init();
+  
   waitKey(0);
   return 0;
 }
