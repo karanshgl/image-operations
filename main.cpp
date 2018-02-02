@@ -52,8 +52,8 @@ class AffineTransformation{
 
     Mat output(newRow, newCol, CV_8UC3);
 
-    double sr = (nRows-1)*1.0/(newRow-1);
-    double sc = (nCols-1)*1.0/(newCol-1);
+    double sr = (nRows)*1.0/(newRow-1);
+    double sc = (nCols)*1.0/(newCol-1);
 
     Vec3b *p,*q;
 
@@ -125,8 +125,8 @@ public:
     int nRows = I.rows;
     int nCols = I.cols;
 
-    int newRow = floor(scale*nRows);
-    int newCol = floor(scale*nCols);
+    int newRow = round(scale*nRows);
+    int newCol = round(scale*nCols);
 
     return resample(I, newRow, newCol, ip);
 
@@ -345,6 +345,7 @@ Mat tiePoints(Mat &I, int *arr_x, int *arr_y, int *arr_x_dist, int *arr_y_dist){
   int max_y = 0;
   int min_x = 100000000;
   int min_y = 100000000;
+  for(int i=0;i<8;i++) cout<<c_d2o[i]<<" ";
   for(int i=0;i<nRows;i++){
     for(int j=0;j<nCols;j++){
 
@@ -361,7 +362,7 @@ Mat tiePoints(Mat &I, int *arr_x, int *arr_y, int *arr_x_dist, int *arr_y_dist){
 
   int dRows = max_x-min_x;
   int dCols = max_y-min_y;
-
+  cout << max_x << " " << min_x<< " " << max_y<< " "<<min_y<<endl;
   Mat output(dRows, dCols, CV_8UC3);
 
   for(int i=0;i<dRows;i++){
@@ -1273,6 +1274,30 @@ Mat bitplaneSlicing(Mat &I, int bit){
 
 class Menu{
 
+  double getPSNR(const Mat& I1, const Mat& I2){
+  // From Documentation
+
+   Mat s1;
+   absdiff(I1, I2, s1);       // |I1 - I2|
+   s1.convertTo(s1, CV_32F);  // cannot make a square on 8 bits
+   s1 = s1.mul(s1);           // |I1 - I2|^2
+
+   Scalar s = sum(s1);         // sum elements per channel
+
+   double sse = s.val[0] + s.val[1] + s.val[2]; // sum channels
+
+   if( sse <= 1e-10) // for small values return zero
+       return 0;
+   else
+   {
+       double  mse =sse /(double)(I1.channels() * I1.total());
+       double psnr = 10.0*log10((255*255)/mse);
+       return psnr;
+   }
+  }
+
+
+
   bool check(Mat I){
     if(! I.data ) {
        cout <<  "Could not open or find the image" << endl ;
@@ -1282,8 +1307,9 @@ class Menu{
   }
 
   void resize(){
-    Mat image;
+    Mat image, image_copy;
     Mat output;
+    Mat inbuilt;
     cout << "imresize>> File Path | Factor | Interpolation (nearest or bilinear)"<<endl;
     string file, interpolation;
     double factor;
@@ -1293,17 +1319,27 @@ class Menu{
 
     if(!check(image)) return;
 
+    image_copy = imread(file.c_str() , 1);
     AffineTransformation at;
 
-    if(interpolation == "nearest") output = at.resize(image, factor, nearest);
-    else if(interpolation == "bilinear") output = at.resize(image, factor, bilinear);
+    if(interpolation == "nearest"){ 
+      output = at.resize(image, factor, nearest);
+      cv::resize(image, inbuilt, output.size(), 0, 0, INTER_NEAREST);
+    }
+    else if(interpolation == "bilinear"){
+       output = at.resize(image, factor, bilinear);
+       cv::resize(image_copy, inbuilt, output.size(), 0, 0, INTER_LINEAR);
+    } 
     else{
       cout << "Invalid Command";
       return;
     } 
+    cout << "PSNR: "<<getPSNR(output, inbuilt);
     imshow( "Display window", output);  
+    imshow( "Display window 2", inbuilt); 
     waitKey(0);
     destroyWindow("Display window");
+    destroyWindow("Display window 2");
   }
 
   void scale(){
@@ -1354,11 +1390,14 @@ class Menu{
     imshow( "Display window", output);  
     waitKey(0);
     destroyWindow("Display window");
+    imwrite("rotate.png", output);
   }
 
   void translate(){
     Mat image;
     Mat output;
+    Mat inbuilt;
+
     cout << "imtranslate>> File Path | Factor X | Factor Y "<<endl;
     string file;
     int factor_x, factor_y;
@@ -1370,11 +1409,18 @@ class Menu{
 
     AffineTransformation at;
 
+    double arr[2][3] = {{1, 0, factor_y},{0, 1 , factor_x}};
+    Mat affine(2, 3, CV_64FC1, arr);
+
     output = at.translate(image, factor_x, factor_y);
+    warpAffine(image, inbuilt, affine, image.size());
    
+    cout << "PSNR: "<<getPSNR(output, inbuilt);
     imshow( "Display window", output);  
+    imshow( "Display window 2", inbuilt); 
     waitKey(0);
     destroyWindow("Display window");
+    destroyWindow("Display window 2");
   }
 
    void shear(){
