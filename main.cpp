@@ -1,3 +1,27 @@
+/* 
+  To run the program: `
+    $ g++ <file_name> -o output `pkg-config --cflags --libs opencv`
+    $ ./output
+  
+  You will see the functions : <command>, type the command for the specific function.
+  Everything function would have format like <File> | <paramater> | ..
+  give the space seperated input.
+
+  PSNR function taken from OpenCV.
+
+  Note: There were no inbuilt functions for rotation, shear and other affine transformations where the dimensions of the output image were adjusted to fit the transformed image. Therefore PNSR and RMSE were not taken.
+  
+  I took out PSNR and RMSE for the inbuilt functions I could find. Since adaptive histogram doesn't follow the inbuilt algo, error wasn't take.
+  However, comparisons of errors with bicubic, ahe, etc would be written in my report.
+
+  References: Even though no psudo code or code was read online, my references are:
+  Slides uploaded in google drive and eece 4353 vanderbilt university school of engineering
+  Adaptive Histogram and its Variations by Pizer (1987)
+  OpenCV documentation for inbuilt functions
+  A Fast Implementation of Adaptive Histogram Equalization : https://pdfs.semanticscholar.org/fca4/38ac67c0e2f2eb08d41ad54469ad1841446d.pdf
+
+*/
+
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <iostream>
@@ -44,16 +68,19 @@ class AffineTransformation{
     return (be <= x && x < en);
   }
 
-  Mat resample(Mat &I, int newRow, int newCol, Interpolation ip){
+  Mat resample(Mat &I, double s1, double s2, Interpolation ip){
 
     int nRows = I.rows;
     int nCols = I.cols;
     int channels = I.channels();
 
+    int newRow = floor(s1*nRows);
+    int newCol = floor(s2*nCols);
+
     Mat output(newRow, newCol, CV_8UC3);
 
-    double sr = (nRows)*1.0/(newRow-1);
-    double sc = (nCols)*1.0/(newCol-1);
+    double sr = (nRows-1)*1.0/(newRow-1);
+    double sc = (nCols-1)*1.0/(newCol-1);
 
     Vec3b *p,*q;
 
@@ -66,8 +93,8 @@ class AffineTransformation{
         for(int k=0;k<channels;k++){
           if(ip == nearest){
 
-            int x = round(i*sr);
-            int y = round(j*sc);
+            int x = round(i/s1);
+            int y = round(j/s2);
 
             if(inRange(x,0,nRows) && inRange(y, 0, nCols)) q[j][k] = nearestNeighbour(I, x, y ,k);
           } 
@@ -122,13 +149,7 @@ public:
 
   Mat resize(Mat &I, double scale, Interpolation ip){
 
-    int nRows = I.rows;
-    int nCols = I.cols;
-
-    int newRow = round(scale*nRows);
-    int newCol = round(scale*nCols);
-
-    return resample(I, newRow, newCol, ip);
+    return resample(I, scale, scale, ip);
 
   }
 
@@ -187,7 +208,7 @@ Mat rotate(Mat &I, double angle, Interpolation ip){
     newCol = round(abs(diagonal*sin(theta_y)));
   }
 
-  cout<<newRow<<" "<<newCol<<endl;
+  //cout<<newRow<<" "<<newCol<<endl;
 
   int in_origin_x = floor(0.5*nRows);
   int in_origin_y = floor(0.5*nCols);
@@ -241,13 +262,7 @@ Mat rotate(Mat &I, double angle, Interpolation ip){
 
 Mat scale(Mat &I, double x_scale, double y_scale, Interpolation ip){
 
-  int nRows = I.rows;
-  int nCols = I.cols;
-
-  int newRow = floor(x_scale*nRows);
-  int newCol = floor(y_scale*nCols);
-
-  return resample(I, newRow, newCol, ip);
+  return resample(I, x_scale, y_scale, ip);
 }
 
 Mat translate(Mat &I, int dx, int dy){
@@ -362,7 +377,6 @@ Mat tiePoints(Mat &I, int *arr_x, int *arr_y, int *arr_x_dist, int *arr_y_dist){
 
   int dRows = max_x-min_x;
   int dCols = max_y-min_y;
-  cout << max_x << " " << min_x<< " " << max_y<< " "<<min_y<<endl;
   Mat output(dRows, dCols, CV_8UC3);
 
   for(int i=0;i<dRows;i++){
@@ -445,7 +459,7 @@ public:
     int channels = I.channels();
 
     int lookuptable_log[256];
-    for(int i=0;i<256;i++) lookuptable_log[i] = round(c*log(1+i));
+    for(int i=0;i<256;i++) lookuptable_log[i] = round(c*log(1+i)*255/log(256));
 
 
     Mat I_LAB;
@@ -958,7 +972,7 @@ Mat logTransformation(Mat &I, double c = 1.0){
 
 
     int lookuptable_log[256];
-    for(int i=0;i<256;i++) lookuptable_log[i] = round(c*log(1+i));
+    for(int i=0;i<256;i++) lookuptable_log[i] = round(c*log(1+i)*255/log(256));
 
     Mat I_gray(I);
 
@@ -1035,11 +1049,12 @@ Mat histogramEqualization(Mat &I){
 
     for(int i=0;i<nRows;i++){
       p = I_gray.ptr<uchar>(i);
+      q = output.ptr<uchar>(i);
       for(int j=0;j<nCols;j++){
-        p[j] = lookuptable[p[j]];
+        q[j] = lookuptable[p[j]];
       }
     }
-    return I_gray;
+    return output;
   }
 
   Mat histogramMatching(Mat &I, Mat &D){
@@ -1274,6 +1289,8 @@ Mat bitplaneSlicing(Mat &I, int bit){
 
 class Menu{
 
+
+
   double getPSNR(const Mat& I1, const Mat& I2){
   // From Documentation
 
@@ -1296,6 +1313,27 @@ class Menu{
    }
   }
 
+  double getRMSE(const Mat& I1, const Mat& I2){
+  // From Documentation
+
+   Mat s1;
+   absdiff(I1, I2, s1);       // |I1 - I2|
+   s1.convertTo(s1, CV_32F);  // cannot make a square on 8 bits
+   s1 = s1.mul(s1);           // |I1 - I2|^2
+
+   Scalar s = sum(s1);         // sum elements per channel
+
+   double sse = s.val[0] + s.val[1] + s.val[2]; // sum channels
+
+   if( sse <= 1e-10) // for small values return zero
+       return 0;
+   else
+   {
+       double  mse =sse /(double)(I1.channels() * I1.total());
+       return sqrt(mse);
+   }
+  }
+
 
 
   bool check(Mat I){
@@ -1307,7 +1345,7 @@ class Menu{
   }
 
   void resize(){
-    Mat image, image_copy;
+    Mat image;
     Mat output;
     Mat inbuilt;
     cout << "imresize>> File Path | Factor | Interpolation (nearest or bilinear)"<<endl;
@@ -1319,7 +1357,6 @@ class Menu{
 
     if(!check(image)) return;
 
-    image_copy = imread(file.c_str() , 1);
     AffineTransformation at;
 
     if(interpolation == "nearest"){ 
@@ -1328,23 +1365,26 @@ class Menu{
     }
     else if(interpolation == "bilinear"){
        output = at.resize(image, factor, bilinear);
-       cv::resize(image_copy, inbuilt, output.size(), 0, 0, INTER_LINEAR);
+       cv::resize(image, inbuilt, output.size(), 0, 0, INTER_LINEAR);
     } 
     else{
       cout << "Invalid Command";
       return;
     } 
-    cout << "PSNR: "<<getPSNR(output, inbuilt);
-    imshow( "Display window", output);  
-    imshow( "Display window 2", inbuilt); 
+  
+    cout << "PSNR: "<<getPSNR(output, inbuilt) << " RMSE: "<<getRMSE(output, inbuilt)<<endl;
+    imshow( "Output", output);  
+    imshow( "Inbuilt Output", inbuilt); 
+  
     waitKey(0);
-    destroyWindow("Display window");
-    destroyWindow("Display window 2");
+    destroyWindow("Output");
+    destroyWindow("Inbuilt Output");
   }
 
   void scale(){
     Mat image;
     Mat output;
+    Mat inbuilt;
     cout << "imscale>> File Path | Factor X | Factor Y | Interpolation (nearest or bilinear)"<<endl;
     string file, interpolation;
     double factor_x, factor_y;
@@ -1356,20 +1396,34 @@ class Menu{
 
     AffineTransformation at;
 
-    if(interpolation == "nearest") output = at.scale(image, factor_x, factor_y, nearest);
-    else if(interpolation == "bilinear") output = at.scale(image, factor_x, factor_y, bilinear);
+    if(interpolation == "nearest"){
+      output = at.scale(image, factor_x, factor_y, nearest);
+      cv::resize(image, inbuilt, output.size(), 0, 0, INTER_NEAREST);
+    } 
+    else if(interpolation == "bilinear"){
+      output = at.scale(image, factor_x, factor_y, bilinear);
+       cv::resize(image, inbuilt, output.size(), 0, 0, INTER_CUBIC);
+    } 
     else{
       cout << "Invalid Command";
       return;
     } 
-    imshow( "Display window", output);  
+   
+
+    cout << "PSNR: "<<getPSNR(output, inbuilt) << " RMSE: "<<getRMSE(output, inbuilt)<<endl;
+    imshow( "Output", output);  
+    imshow( "Inbuilt Output", inbuilt); 
+  
     waitKey(0);
-    destroyWindow("Display window");
+    destroyWindow("Output");
+    destroyWindow("Inbuilt Output");
   }
 
   void rotate(){
     Mat image;
     Mat output;
+
+
     cout << "imrotate>> File Path | Degree | Interpolation (nearest or bilinear)"<<endl;
     string file, interpolation;
     double factor;
@@ -1387,10 +1441,10 @@ class Menu{
       cout << "Invalid Command";
       return;
     } 
-    imshow( "Display window", output);  
+
+    imshow( "Output", output);  
     waitKey(0);
-    destroyWindow("Display window");
-    imwrite("rotate.png", output);
+    destroyWindow("Output");
   }
 
   void translate(){
@@ -1415,12 +1469,13 @@ class Menu{
     output = at.translate(image, factor_x, factor_y);
     warpAffine(image, inbuilt, affine, image.size());
    
-    cout << "PSNR: "<<getPSNR(output, inbuilt);
-    imshow( "Display window", output);  
-    imshow( "Display window 2", inbuilt); 
+    cout << "PSNR: "<<getPSNR(output, inbuilt) << " RMSE: "<<getRMSE(output, inbuilt)<<endl;
+  
+    imshow( "Output", output);  
+    imshow( "Inbuilt Output", inbuilt); 
     waitKey(0);
-    destroyWindow("Display window");
-    destroyWindow("Display window 2");
+    destroyWindow("Output");
+    destroyWindow("Inbuilt Output");
   }
 
    void shear(){
@@ -1444,10 +1499,9 @@ class Menu{
       cout << "Invalid Command";
       return;
     } 
-   
-    imshow( "Display window", output);  
+    imshow( "Output", output);  
     waitKey(0);
-    destroyWindow("Display window");
+    destroyWindow("Output");
   }
 
   void tie(){
@@ -1472,9 +1526,9 @@ class Menu{
 
     output = at.tiePoints(image, x_orig, y_orig, x_dist, y_dist);
    
-    imshow( "Display window", output);  
+    imshow( "Output", output);  
     waitKey(0);
-    destroyWindow("Display window");
+    destroyWindow("Output");
   }
 
   void negative(bool rgb){
@@ -1497,9 +1551,9 @@ class Menu{
       output = it.negative(image);
     }
    
-    imshow( "Display window", output);  
+    imshow( "Output", output);  
     waitKey(0);
-    destroyWindow("Display window");
+    destroyWindow("Output");
   }
 
   void log_t(bool rgb){
@@ -1524,9 +1578,9 @@ class Menu{
     }
 
    
-    imshow( "Display window", output);  
+    imshow( "Output", output);  
     waitKey(0);
-    destroyWindow("Display window");
+    destroyWindow("Output");
   }
 
   void gamma_t(bool rgb){
@@ -1551,15 +1605,15 @@ class Menu{
     }
 
    
-    imshow( "Display window", output);  
+    imshow( "Output", output);  
     waitKey(0);
-    destroyWindow("Display window");
+    destroyWindow("Output");
   }
 
   void linear_t(bool rgb){
     Mat image;
     Mat output;
-    cout << "linear>> File Path | number of points | points (xi,yi) "<<endl;
+    cout << "linear>> File Path | number of points | points (xi,yi) in order "<<endl;
     string file;
     int n;
     cin>>file>>n;
@@ -1582,9 +1636,9 @@ class Menu{
       output = it.piecewiseLinearTransformation(image, x, y, n);
     }
 
-    imshow( "Display window", output);  
+    imshow( "Output", output);  
     waitKey(0);
-    destroyWindow("Display window");
+    destroyWindow("Output");
   }
 
   void bit_t(bool rgb){
@@ -1608,15 +1662,15 @@ class Menu{
       output = it.bitplaneSlicing(image, n);
     }
 
-    imshow( "Display window", output);  
+    imshow( "Output", output);  
     waitKey(0);
-    destroyWindow("Display window");
+    destroyWindow("Output");
   }
 
   void hist(bool rgb){
     Mat image;
     Mat output;
-
+    Mat inbuilt;
     if(rgb){
       cout << "hist>> File Path | Channels (1:Luminance or 3:RGB) "<<endl;
       string file;
@@ -1630,20 +1684,29 @@ class Menu{
       IntensityTransformations it;
       if(n == 1) output = it.histogramEqualizationLuminance(image);
       else if(n == 3) output = it.histogramEqualization(image);
+      imshow( "Output", output);  
+      waitKey(0);
+      destroyWindow("Output");
     } 
     else{
       cout << " File Path "<<endl;
       string file;
       cin>>file;
-     
+
       image = imread(file.c_str() , 1); 
+      cvtColor( image, image, CV_BGR2GRAY );
       IntensityTransformationsGray it;
       output = it.histogramEqualization(image);
+      equalizeHist( image, inbuilt);
+      cout << "PSNR: "<<getPSNR(output, inbuilt) << " RMSE: "<<getRMSE(output, inbuilt)<<endl;
+      imshow( "Output", output);  
+      imshow( "Inbuilt Output", inbuilt); 
+      waitKey(0);
+      destroyWindow("Output");
+      destroyWindow("Inbuilt Output");
     }
 
-    imshow( "Display window", output);  
-    waitKey(0);
-    destroyWindow("Display window");
+    
   }
 
   void adapthist(bool rgb){
@@ -1698,9 +1761,9 @@ class Menu{
       }
     }
 
-    imshow( "Display window", output);  
+    imshow( "Output", output);  
     waitKey(0);
-    destroyWindow("Display window");
+    destroyWindow("Output");
   }
 
   void histmatch(bool rgb){
@@ -1734,9 +1797,9 @@ class Menu{
       output = it.histogramMatching(image_input, image_reference);
     }
 
-    imshow( "Display window", output);  
+    imshow( "Output", output);  
     waitKey(0);
-    destroyWindow("Display window");
+    destroyWindow("Output");
   }
 
 
@@ -1780,7 +1843,7 @@ public:
       else if(s == "imscale") scale();
       else if(s == "imrotate") rotate();
       else if(s == "imtranslate") translate();
-      else if(s == "imshear") translate();
+      else if(s == "imshear") shear();
       else if(s == "imrecon") tie();
       else if(s == "negative") negative(rgb);
       else if(s == "log") log_t(rgb);
@@ -1800,15 +1863,9 @@ public:
 
 int main( int argc, char** argv ) {
   
-
-  
-  // if(! image.data ) {
-  //     cout <<  "Could not open or find the image" << endl ;
-  //     return -1;
-  //   }
   Menu m;
   m.init();
   
-  waitKey(0);
+  //waitKey(0);
   return 0;
 }
